@@ -1,0 +1,5 @@
+config BR2_PACKAGE_SEALBUILD_RUNC
+	bool "sealbuild-runc"
+	depends on BR2_x86_64
+	help
+	  Installs the pinned linux/amd64 runc used by Sealbuild.

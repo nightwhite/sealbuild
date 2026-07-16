@@ -1,0 +1,5 @@
+config BR2_PACKAGE_SEALBUILD_BUILDKIT
+	bool "sealbuild-buildkit"
+	depends on BR2_x86_64
+	help
+	  Installs the pinned linux/amd64 buildkitd used by Sealbuild.

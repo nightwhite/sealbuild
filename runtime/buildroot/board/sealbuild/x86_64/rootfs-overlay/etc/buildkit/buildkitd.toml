@@ -1,0 +1,26 @@
+root = "/var/lib/buildkit"
+
+[grpc]
+  address = ["tcp://0.0.0.0:1234"]
+  [grpc.tls]
+    cert = "/etc/buildkit/tls/server.crt"
+    key = "/etc/buildkit/tls/server.key"
+    ca = "/etc/buildkit/tls/ca.crt"
+
+[cdi]
+  disabled = true
+
+[worker.oci]
+  enabled = true
+  platforms = ["linux/amd64"]
+  snapshotter = "native"
+  rootless = false
+  noProcessSandbox = false
+  gc = true
+  networkMode = "bridge"
+  binary = "/usr/bin/runc"
+  max-parallelism = 2
+  cniPoolSize = 2
+
+[worker.containerd]
+  enabled = false

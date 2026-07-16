@@ -1,0 +1,14 @@
+.DS_Store
+
+/bin/
+/dist/
+/out/
+/sealbuild
+/sealbuild.exe
+*.test
+coverage.out
+
+/runtime/generated/
+
+/reference/*
+!/reference/index.md

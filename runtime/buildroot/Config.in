@@ -1,0 +1,7 @@
+menu "Sealbuild guest runtime"
+
+source "$BR2_EXTERNAL_SEALBUILD_PATH/package/sealbuild-buildkit/Config.in"
+source "$BR2_EXTERNAL_SEALBUILD_PATH/package/sealbuild-runc/Config.in"
+source "$BR2_EXTERNAL_SEALBUILD_PATH/package/sealbuild-cni-plugins/Config.in"
+
+endmenu

@@ -1,0 +1,48 @@
+#!/bin/sh
+
+set -eu
+
+console=/dev/console
+log_file=/run/buildkitd.log
+state_device=/dev/vdb
+state_dir=/var/lib/buildkit
+
+fail() {
+	if [ -r "${log_file}" ]; then
+		cat "${log_file}" >"${console}"
+	fi
+	printf 'SEALBUILD_RUNTIME_FAILED stage=%s\n' "$1" >"${console}"
+	exit 1
+}
+
+[ -r /proc/self/mountinfo ] || fail proc
+[ -d /sys/fs/cgroup ] || fail cgroup2
+[ -d /sys/class/net/eth0 ] || fail network-device
+[ -b "${state_device}" ] || fail state-device
+[ -r /etc/buildkit/tls/ca.crt ] || fail tls-ca
+[ -r /etc/buildkit/tls/server.crt ] || fail tls-cert
+[ -r /etc/buildkit/tls/server.key ] || fail tls-key
+
+mkdir -p "${state_dir}"
+grep -qs " ${state_dir} " /proc/mounts || mount -t ext4 "${state_device}" "${state_dir}" || fail state-mount
+
+ip route show default | grep -q '^default ' || fail network-route
+
+printf 'SEALBUILD_RUNTIME_STARTING\n' >"${console}"
+/usr/bin/buildkitd --config /etc/buildkit/buildkitd.toml >"${log_file}" 2>&1 &
+buildkitd_pid=$!
+
+for _attempt in $(seq 1 120); do
+	if ! kill -0 "${buildkitd_pid}" 2>/dev/null; then
+		fail buildkitd-exit
+	fi
+	if grep -q 'running server on' "${log_file}"; then
+		cat "${log_file}" >"${console}"
+		printf 'SEALBUILD_RUNTIME_READY\n' >"${console}"
+		exit 0
+	fi
+	sleep 1
+done
+
+kill "${buildkitd_pid}" 2>/dev/null || true
+fail buildkitd-timeout

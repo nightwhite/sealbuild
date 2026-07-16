@@ -1,0 +1,6 @@
+config BR2_PACKAGE_SEALBUILD_CNI_PLUGINS
+	bool "sealbuild-cni-plugins"
+	depends on BR2_x86_64
+	select BR2_PACKAGE_IPTABLES
+	help
+	  Installs the four pinned CNI plugins required by BuildKit bridge mode.

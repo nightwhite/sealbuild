@@ -1,0 +1,116 @@
+name: Runtime spike
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/runtime-spike.yml"
+      - "go.mod"
+      - "internal/runtime/**"
+      - "runtime/**"
+      - "scripts/runtime/**"
+  push:
+    paths:
+      - ".github/workflows/runtime-spike.yml"
+      - "go.mod"
+      - "internal/runtime/**"
+      - "runtime/**"
+      - "scripts/runtime/**"
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Check out Sealbuild
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.1"
+          cache: true
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            bc build-essential ca-certificates cpio curl e2fsprogs file git jq \
+            libelf-dev libglib2.0-dev libpixman-1-dev libslirp-dev ninja-build \
+            openssl perl pkg-config python3 rsync tar unzip wget zstd
+
+      - name: Run Go tests
+        run: |
+          gofmt_files=$(gofmt -l ./cmd ./internal ./scripts/runtime)
+          test -z "${gofmt_files}"
+          go vet ./...
+          go test ./...
+
+      - name: Check out pinned Buildroot
+        run: |
+          git init "$RUNNER_TEMP/buildroot"
+          git -C "$RUNNER_TEMP/buildroot" remote add origin https://github.com/buildroot/buildroot.git
+          git -C "$RUNNER_TEMP/buildroot" fetch --depth 1 origin cb857ba4c87a93e5265a9e4a3f32071abf39e14a
+          git -C "$RUNNER_TEMP/buildroot" checkout --detach FETCH_HEAD
+
+      - name: Build pinned QEMU
+        run: |
+          git init "$RUNNER_TEMP/qemu"
+          git -C "$RUNNER_TEMP/qemu" remote add origin https://gitlab.com/qemu-project/qemu.git
+          git -C "$RUNNER_TEMP/qemu" fetch --depth 1 origin e545d8bb9d63e9dd61542b88463183314cff9482
+          git -C "$RUNNER_TEMP/qemu" checkout --detach FETCH_HEAD
+          cd "$RUNNER_TEMP/qemu"
+          ./configure \
+            --target-list=x86_64-softmmu \
+            --enable-slirp \
+            --disable-docs \
+            --disable-guest-agent \
+            --disable-tools \
+            --disable-user
+          ninja -C build qemu-system-x86_64
+          build/qemu-system-x86_64 --version | grep -F 'version 11.0.2'
+
+      - name: Build Guest Runtime
+        run: |
+          ./scripts/runtime/build-guest.sh \
+            "$RUNNER_TEMP/buildroot" \
+            "$RUNNER_TEMP/runtime-spike"
+
+      - name: Install pinned buildctl
+        run: |
+          curl --fail --location \
+            --output "$RUNNER_TEMP/buildkit.tar.gz" \
+            https://github.com/moby/buildkit/releases/download/v0.31.1/buildkit-v0.31.1.linux-amd64.tar.gz
+          printf '%s  %s\n' \
+            1fc78750d0c96bdc18799a3c0b551d6807bd4939e8cd79e357823e467451e16e \
+            "$RUNNER_TEMP/buildkit.tar.gz" | sha256sum --check --status
+          tar -xzf "$RUNNER_TEMP/buildkit.tar.gz" -C "$RUNNER_TEMP" bin/buildctl
+
+      - name: Run QEMU TCG smoke test
+        run: |
+          ./scripts/runtime/smoke-guest.sh \
+            "$RUNNER_TEMP/qemu/build/qemu-system-x86_64" \
+            "$RUNNER_TEMP/bin/buildctl" \
+            "$RUNNER_TEMP/runtime-spike/artifact" \
+            "$RUNNER_TEMP/smoke-output" \
+            12345
+
+      - name: Upload Runtime and smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sealbuild-runtime-spike-linux-amd64
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/runtime-spike/sealbuild-guest-runtime.tar.zst
+            ${{ runner.temp }}/runtime-spike/artifact/checksums.txt
+            ${{ runner.temp }}/smoke-output/serial.log
+            ${{ runner.temp }}/smoke-output/worker.json
+            ${{ runner.temp }}/smoke-output/measurements.txt
+            ${{ runner.temp }}/smoke-output/first-build.tar
+            ${{ runner.temp }}/smoke-output/cached-build.tar

@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "guestPlatform": {
+    "os": "linux",
+    "architecture": "amd64"
+  },
+  "components": [
+    {
+      "name": "buildroot",
+      "version": "2026.05.1",
+      "source": "https://github.com/buildroot/buildroot.git",
+      "revision": "cb857ba4c87a93e5265a9e4a3f32071abf39e14a",
+      "sha256": "db662a12d30ffe143e2de17d84cc5148a00a455655a752e8402bcf76f2d32eda"
+    },
+    {
+      "name": "linux",
+      "version": "6.18.7",
+      "source": "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.7.tar.xz",
+      "sha256": "b726a4d15cf9ae06219b56d87820776e34d89fbc137e55fb54a9b9c3015b8f1e"
+    },
+    {
+      "name": "buildkit",
+      "version": "v0.31.1",
+      "source": "https://github.com/moby/buildkit/releases/download/v0.31.1/buildkit-v0.31.1.linux-amd64.tar.gz",
+      "revision": "673b7e0196de0cac83308274b88aaed97a91af74",
+      "sha256": "1fc78750d0c96bdc18799a3c0b551d6807bd4939e8cd79e357823e467451e16e"
+    },
+    {
+      "name": "runc",
+      "version": "v1.5.1",
+      "source": "https://github.com/opencontainers/runc/releases/download/v1.5.1/runc.amd64",
+      "revision": "8f2685a471d3347a686ad3909783d8aafc6bb208",
+      "sha256": "177df879d50c913eb205e898d5c1c05a18f574053c0ce5524c471208eaf06f6f"
+    },
+    {
+      "name": "cni-plugins",
+      "version": "v1.9.1",
+      "source": "https://github.com/containernetworking/plugins/releases/download/v1.9.1/cni-plugins-linux-amd64-v1.9.1.tgz",
+      "sha256": "b98f74a0f8522f0a83867178729c1aa70f2158f90c45a2ca8fa791db1c76b303"
+    },
+    {
+      "name": "qemu",
+      "version": "v11.0.2",
+      "source": "https://gitlab.com/qemu-project/qemu.git",
+      "revision": "e545d8bb9d63e9dd61542b88463183314cff9482",
+      "sha256": "6f5dc8b9705dd58f87e31ccbb5cdd340df6d7de84fb92c293d8587d25965a10c"
+    }
+  ]
+}
