@@ -25,6 +25,8 @@ fail() {
 
 mkdir -p "${state_dir}"
 grep -qs " ${state_dir} " /proc/mounts || mount -t ext4 "${state_device}" "${state_dir}" || fail state-mount
+mkdir -p "${state_dir}/cni"
+mount --bind "${state_dir}/cni" /var/lib/cni || fail cni-state-mount
 
 ip route show default | grep -q '^default ' || fail network-route
 
