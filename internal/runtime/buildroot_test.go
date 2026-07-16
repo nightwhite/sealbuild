@@ -54,3 +54,20 @@ func TestBuildrootKeepsCNIStateOnWritableStateDisk(t *testing.T) {
 		t.Fatalf("init script is missing %q", requiredBindMount)
 	}
 }
+
+func TestGuestKernelEnablesLegacyIPTablesNATDependencies(t *testing.T) {
+	kernelConfig, err := os.ReadFile("../../runtime/buildroot/board/sealbuild/x86_64/linux.config")
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+
+	for _, requiredSetting := range []string{
+		"CONFIG_NETFILTER_XTABLES_LEGACY=y",
+		"CONFIG_IP_NF_IPTABLES_LEGACY=y",
+		"CONFIG_IP_NF_NAT=y",
+	} {
+		if !strings.Contains(string(kernelConfig), requiredSetting+"\n") {
+			t.Errorf("kernel config is missing %q", requiredSetting)
+		}
+	}
+}
