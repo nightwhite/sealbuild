@@ -17,3 +17,15 @@ func TestBuildrootDefconfigPinsKernelHeadersToGuestKernelSeries(t *testing.T) {
 		t.Fatalf("defconfig is missing %q", requiredSetting)
 	}
 }
+
+func TestBuildrootPostBuildCreatesStateMountPointOnReadOnlyRootfs(t *testing.T) {
+	postBuild, err := os.ReadFile("../../runtime/buildroot/board/sealbuild/x86_64/post-build.sh")
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+
+	const requiredCommand = `install -d -m 0755 "${target_dir}/var/lib/buildkit"`
+	if !strings.Contains(string(postBuild), requiredCommand+"\n") {
+		t.Fatalf("post-build script is missing %q", requiredCommand)
+	}
+}
