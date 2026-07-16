@@ -4,7 +4,9 @@
 
 里程碑 1 已完成 Runtime 定义、严格版本锁、Buildroot External Tree、Guest 启动配置、mTLS、QEMU TCG Smoke Test 和 Linux GitHub Actions 的基础实现。
 
-当前结论不是「Guest Runtime 已通过」。项目尚未初始化 Git，也没有 GitHub Remote，因此 Linux Workflow 还没有实际运行；当前 Mac ARM 也没有安装 `qemu-system-x86_64`，无法在本机执行端到端 Smoke Test。
+Linux Runtime Spike 已在 GitHub Actions 端到端通过。当前 Mac ARM 没有可用的 `qemu-system-x86_64`，因此 Mac ARM 纯 TCG 性能门仍未验证，里程碑 1 尚未最终关闭。
+
+成功运行：[Runtime spike #29495019169](https://github.com/nightwhite/sealbuild/actions/runs/29495019169)，Commit `98f89cb83a9cac627f3c69b58fa9a654f155c527`。
 
 ## Locally verified on 2026-07-16
 
@@ -20,18 +22,31 @@
 - Buildroot Kconfig：内置旧版 `BR2_PACKAGE_RUNC` 和 `BR2_PACKAGE_MOBY_BUILDKIT` 均未启用。
 - GitHub Actions：`actionlint v1.7.7` 通过。
 
-## Required Linux CI evidence
+## Linux CI evidence
 
-以下项目尚未验证，必须由 `.github/workflows/runtime-spike.yml` 真实运行产生：
+运行环境：GitHub-hosted `ubuntu-24.04` AMD64 Runner；QEMU 明确使用 TCG，不使用 `/dev/kvm`。
 
-- Buildroot 完整构建成功。
-- QEMU v11.0.2 Linux binary 构建成功。
-- Guest rootfs 启动且输出 `SEALBUILD_RUNTIME_READY`。
-- BuildKit 只报告一个 `linux/amd64` worker。
-- Smoke Dockerfile 的联网 `RUN`、`COPY` 和多阶段构建成功。
-- 首次构建和缓存构建均导出 OCI Archive。
-- 两个 OCI Archive 的平台检查严格通过 `linux/amd64`。
-- Guest Runtime 压缩体积不超过 85 MiB。
+- QEMU v11.0.2 构建：3 分 11 秒。
+- Guest Runtime 冷构建：37 分 35 秒。
+- QEMU TCG Smoke：20 秒。
+- Guest 冷启动至 BuildKit Ready：7 秒。
+- 首次 Dockerfile 构建：12 秒。
+- 缓存 Dockerfile 构建：1 秒。
+- Guest Runtime 压缩文件：36,070,725 字节，约 34.4 MiB。
+- BuildKit：v0.31.1，Revision `673b7e0196de0cac83308274b88aaed97a91af74`。
+- Worker：唯一 OCI worker，`native` snapshotter，CNI 网络，平台仅包含 `linux/amd64` 及其 `v2`、`v3` 微架构变体。
+- Smoke Dockerfile：联网 `RUN`、`COPY` 和多阶段构建通过。
+- 首次构建和缓存构建均导出 9,216 字节 OCI Archive。
+- 两个 OCI Archive 均由项目检查器确认平台严格为 `linux/amd64`。
+
+## Known diagnostics
+
+以下启动日志没有导致本次构建失败，但需要在 Runtime 收敛阶段处理：
+
+- Buildroot 的 cgroup2 启动脚本重复挂载已经由 `/etc/fstab` 挂载的 cgroup2，输出 `Resource busy`。
+- `seedrng` 尝试在只读 rootfs 写入 `/var/lib/seedrng`，输出只读文件系统错误。
+- BuildKit 在 `proxyNetwork` 未启用时仍预填充 proxy network namespace，最小 Kernel 返回 `protocol not supported`；普通 bridge 网络的两次 Smoke 构建均成功。
+- Guest 不包含 `git`，BuildKit 明确警告 Git source frontend 不可用；本阶段要求的本地 Dockerfile Context 不受影响。
 
 ## Required Mac ARM evidence
 

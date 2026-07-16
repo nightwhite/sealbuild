@@ -4,9 +4,9 @@ Sealbuild 是一个完全本地、免安装、自包含的镜像构建 CLI。它
 
 ## 当前状态
 
-项目当前完成 Go 基础框架，并已进入 Guest Runtime 可行性验证。仓库内已有固定版本的 Runtime Lock、Buildroot External Tree、Guest init、mTLS、QEMU TCG Smoke Test 和 Linux GitHub Actions 定义。
+项目当前完成 Go 基础框架，并已进入 Guest Runtime 可行性验证。仓库内已有固定版本的 Runtime Lock、Buildroot External Tree、Guest init、mTLS、QEMU TCG Smoke Test 和 Linux GitHub Actions 定义。Linux Runner 已完成首次端到端 Runtime Spike，证明纯 TCG Guest 可以构建并导出 `linux/amd64` OCI 镜像。
 
-Linux CI 和 Mac ARM 端到端 Smoke Test 尚未执行，因此当前版本仍不能通过 `sealbuild build` 构建镜像，也不得视为已经支持四种宿主。当前实测状态见 [`docs/runtime-spike-results.md`](docs/runtime-spike-results.md)。
+Mac ARM 端到端 Smoke Test 尚未执行，正式 `sealbuild build` 命令也尚未实现，因此当前版本不得视为已经支持四种宿主。当前实测状态见 [`docs/runtime-spike-results.md`](docs/runtime-spike-results.md)。
 
 ## 支持范围
 
