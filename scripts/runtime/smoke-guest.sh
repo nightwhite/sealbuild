@@ -109,10 +109,7 @@ set -- \
 	--tlskey "${artifact_dir}/tls/client.key"
 
 "${buildctl}" "$@" debug workers --format '{{json .}}' >"${worker_json}"
-jq --exit-status '
-  length == 1 and
-  .[0].platforms == [{"architecture":"amd64","os":"linux"}]
-' "${worker_json}" >/dev/null
+go run "${project_dir}/scripts/runtime/inspect.go" worker "${worker_json}"
 
 first_started=$(date +%s)
 "${buildctl}" "$@" build \
@@ -134,8 +131,8 @@ cached_started=$(date +%s)
 	--output "type=oci,dest=${output_dir}/cached-build.tar"
 cached_finished=$(date +%s)
 
-go run "${project_dir}/scripts/runtime/inspect-oci-platform.go" "${output_dir}/first-build.tar"
-go run "${project_dir}/scripts/runtime/inspect-oci-platform.go" "${output_dir}/cached-build.tar"
+go run "${project_dir}/scripts/runtime/inspect.go" oci "${output_dir}/first-build.tar"
+go run "${project_dir}/scripts/runtime/inspect.go" oci "${output_dir}/cached-build.tar"
 
 {
 	printf 'cold_boot_seconds=%s\n' "$((boot_finished - boot_started))"

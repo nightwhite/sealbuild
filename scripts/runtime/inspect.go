@@ -13,6 +13,11 @@ const (
 	maxIndexSize           = 1024 * 1024
 )
 
+type workerInfo struct {
+	ID        string        `json:"id"`
+	Platforms []ociPlatform `json:"platforms"`
+}
+
 type ociIndex struct {
 	SchemaVersion int             `json:"schemaVersion"`
 	Manifests     []ociDescriptor `json:"manifests"`
@@ -26,26 +31,63 @@ type ociDescriptor struct {
 type ociPlatform struct {
 	OS           string `json:"os"`
 	Architecture string `json:"architecture"`
+	Variant      string `json:"variant,omitempty"`
 }
 
 func main() {
-	if len(os.Args) != 2 {
-		fmt.Fprintf(os.Stderr, "usage: %s OCI_ARCHIVE\n", os.Args[0])
+	if len(os.Args) != 3 {
+		fmt.Fprintf(os.Stderr, "usage: %s worker WORKER_JSON | oci OCI_ARCHIVE\n", os.Args[0])
 		os.Exit(2)
 	}
 
-	archive, err := os.Open(os.Args[1])
+	input, err := os.Open(os.Args[2])
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "open OCI archive: %v\n", err)
+		fmt.Fprintf(os.Stderr, "open %s input: %v\n", os.Args[1], err)
 		os.Exit(1)
 	}
-	defer archive.Close()
+	defer input.Close()
 
-	if err := inspectOCIArchive(archive); err != nil {
-		fmt.Fprintf(os.Stderr, "inspect OCI archive: %v\n", err)
-		os.Exit(1)
+	switch os.Args[1] {
+	case "worker":
+		if err := inspectWorkerJSON(input); err != nil {
+			fmt.Fprintf(os.Stderr, "inspect worker: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("BuildKit worker: linux/amd64")
+	case "oci":
+		if err := inspectOCIArchive(input); err != nil {
+			fmt.Fprintf(os.Stderr, "inspect OCI archive: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("OCI platform: linux/amd64")
+	default:
+		fmt.Fprintf(os.Stderr, "unknown inspection type %q\n", os.Args[1])
+		os.Exit(2)
 	}
-	fmt.Println("OCI platform: linux/amd64")
+}
+
+func inspectWorkerJSON(reader io.Reader) error {
+	var workers []workerInfo
+	if err := json.NewDecoder(reader).Decode(&workers); err != nil {
+		return fmt.Errorf("decode worker JSON: %w", err)
+	}
+	if len(workers) != 1 {
+		return fmt.Errorf("expected exactly one worker, got %d", len(workers))
+	}
+
+	hasBasePlatform := false
+	for _, platform := range workers[0].Platforms {
+		if platform.OS != "linux" || platform.Architecture != "amd64" {
+			return fmt.Errorf("worker platform %s/%s is not allowed", platform.OS, platform.Architecture)
+		}
+		if platform.Variant == "" {
+			hasBasePlatform = true
+		}
+	}
+	if !hasBasePlatform {
+		return fmt.Errorf("base linux/amd64 platform is required")
+	}
+	return nil
 }
 
 func inspectOCIArchive(reader io.Reader) error {

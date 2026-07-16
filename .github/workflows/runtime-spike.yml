@@ -39,7 +39,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
-            bc build-essential ca-certificates cpio curl e2fsprogs file git jq \
+            bc build-essential ca-certificates cpio curl e2fsprogs file git \
             libelf-dev libglib2.0-dev libpixman-1-dev libslirp-dev ninja-build \
             openssl perl pkg-config python3 rsync tar unzip wget zstd
 

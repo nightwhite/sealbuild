@@ -91,8 +91,9 @@
 - 创建：`runtime/smoke/Dockerfile`
 - 创建：`runtime/smoke/input.txt`
 - 创建：`scripts/runtime/smoke-guest.sh`
-- 创建：`scripts/runtime/inspect-oci-platform.go`
+- 创建：`scripts/runtime/inspect.go`
 - 创建：`scripts/runtime/inspect-oci-platform_test.go`
+- 创建：`scripts/runtime/inspect-worker_test.go`
 
 - [ ] Dockerfile 包含联网 `RUN`、`COPY` 和多阶段构建，最终 stage 不依赖宿主架构。
 - [ ] 先为 OCI Index/Manifest 平台检查编写失败测试，再实现只接受 `linux/amd64` 的检查器。
