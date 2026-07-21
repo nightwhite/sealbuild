@@ -2,7 +2,7 @@
 
 set -eu
 
-expected_qemu_commit=e545d8bb9d63e9dd61542b88463183314cff9482
+expected_qemu_version=11.0.2
 expected_python_version='Python 3.14.6'
 setuptools_sha256=e147c0549f27767ba362f9da434eab9c5dc0045d5304feb602a0af001089fc51
 
@@ -64,9 +64,9 @@ qemu_source=$(CDPATH= cd -- "${qemu_source}" && pwd)
 output_parent=$(CDPATH= cd -- "$(dirname "${requested_output_dir}")" && pwd)
 output_dir="${output_parent}/$(basename "${requested_output_dir}")"
 
-actual_qemu_commit=$(git -C "${qemu_source}" rev-parse HEAD)
-if [ "${actual_qemu_commit}" != "${expected_qemu_commit}" ]; then
-	printf 'QEMU commit is %s, expected %s\n' "${actual_qemu_commit}" "${expected_qemu_commit}" >&2
+actual_version=$(tr -d '\r\n' <"${qemu_source}/VERSION")
+if [ "${actual_version}" != "${expected_qemu_version}" ]; then
+	printf 'QEMU source version is %s, expected %s\n' "${actual_version}" "${expected_qemu_version}" >&2
 	exit 1
 fi
 if [ -e "${output_dir}" ]; then

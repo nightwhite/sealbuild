@@ -354,7 +354,8 @@ func TestDarwinQEMUBuildScriptUsesExplicitArchitecture(t *testing.T) {
 	contents := string(buildScript)
 	for _, requiredFragment := range []string{
 		"HOST_ARCHITECTURE HOMEBREW_ROOT PYTHON SETUPTOOLS_WHEEL QEMU_SOURCE OUTPUT_DIR",
-		"e545d8bb9d63e9dd61542b88463183314cff9482",
+		"expected_qemu_version=11.0.2",
+		`actual_version=$(tr -d '\r\n' <"${qemu_source}/VERSION")`,
 		"Python 3.14.6",
 		"e147c0549f27767ba362f9da434eab9c5dc0045d5304feb602a0af001089fc51",
 		`-m venv --system-site-packages "${bootstrap_dir}"`,
@@ -388,6 +389,9 @@ func TestDarwinQEMUBuildScriptUsesExplicitArchitecture(t *testing.T) {
 	if strings.Contains(contents, "--enable-hvf") {
 		t.Fatal("build script must not enable HVF")
 	}
+	if strings.Contains(contents, "git -C") {
+		t.Fatal("Darwin QEMU build must use the verified release source without Git checkout")
+	}
 }
 
 func TestLinuxQEMUBuildScriptUsesPinnedTCGOnlyConfiguration(t *testing.T) {
@@ -397,7 +401,8 @@ func TestLinuxQEMUBuildScriptUsesPinnedTCGOnlyConfiguration(t *testing.T) {
 	}
 	contents := string(buildScript)
 	for _, requiredFragment := range []string{
-		"e545d8bb9d63e9dd61542b88463183314cff9482",
+		"expected_qemu_version=11.0.2",
+		`actual_version=$(tr -d '\r\n' <"${qemu_source}/VERSION")`,
 		`[ "$(uname -s)" = Linux ]`,
 		`[ "$(uname -m)" = x86_64 ]`,
 		"--target-list=x86_64-softmmu",
@@ -427,5 +432,8 @@ func TestLinuxQEMUBuildScriptUsesPinnedTCGOnlyConfiguration(t *testing.T) {
 		if strings.Contains(contents, forbidden) {
 			t.Fatalf("Linux QEMU build script contains forbidden option %q", forbidden)
 		}
+	}
+	if strings.Contains(contents, "git -C") {
+		t.Fatal("Linux QEMU build must use the verified release source without Git checkout")
 	}
 }

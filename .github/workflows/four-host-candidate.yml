@@ -1,0 +1,935 @@
+name: Four host candidate
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/four-host-candidate.yml"
+      - "AGENTS.md"
+      - "cmd/**"
+      - "go.mod"
+      - "go.sum"
+      - "internal/**"
+      - "runtime/**"
+      - "scripts/**"
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+    paths:
+      - ".github/workflows/four-host-candidate.yml"
+      - "AGENTS.md"
+      - "cmd/**"
+      - "go.mod"
+      - "go.sum"
+      - "internal/**"
+      - "runtime/**"
+      - "scripts/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: four-host-candidate-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  GO_VERSION: "1.26.1"
+  QEMU_SHA256: 3745f6ea88e2e87fe0dc838b2b1d4e0a770bf48e01a1d5a186842a1fff76ccf5
+  QEMU_URL: https://download.qemu.org/qemu-11.0.2.tar.xz
+  BUILDROOT_COMMIT: cb857ba4c87a93e5265a9e4a3f32071abf39e14a
+
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out Sealbuild
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run source quality gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          formatting=$(gofmt -l $(find cmd internal scripts -name '*.go' -type f))
+          test -z "$formatting"
+          sh -n scripts/runtime/*.sh scripts/dev/*.sh
+          go vet ./...
+          go test ./... -count=1
+          go test -race ./... -count=1
+          git diff --check
+
+  build-guest-runtime:
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out Sealbuild
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install Guest build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            bc build-essential ca-certificates cpio curl e2fsprogs file git jq \
+            libelf-dev libglib2.0-dev libpixman-1-dev libslirp-dev ninja-build \
+            openssl perl pkg-config python3 rsync tar unzip wget zstd
+
+      - name: Check out pinned Buildroot and unpack QEMU
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init "$RUNNER_TEMP/buildroot"
+          git -C "$RUNNER_TEMP/buildroot" remote add origin https://github.com/buildroot/buildroot.git
+          git -C "$RUNNER_TEMP/buildroot" fetch --depth 1 origin "$BUILDROOT_COMMIT"
+          git -C "$RUNNER_TEMP/buildroot" checkout --detach FETCH_HEAD
+          curl --fail --output "$RUNNER_TEMP/qemu-11.0.2.tar.xz" "$QEMU_URL"
+          printf '%s  %s\n' "$QEMU_SHA256" "$RUNNER_TEMP/qemu-11.0.2.tar.xz" | sha256sum --check --status
+          tar -xJf "$RUNNER_TEMP/qemu-11.0.2.tar.xz" -C "$RUNNER_TEMP"
+
+      - name: Build qemu-img and Guest Runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/qemu-11.0.2"
+          ./configure --target-list=x86_64-softmmu --disable-docs --disable-guest-agent --disable-user --disable-download
+          ninja -C build qemu-img
+          cd "$GITHUB_WORKSPACE"
+          ./scripts/runtime/build-guest.sh \
+            "$RUNNER_TEMP/buildroot" \
+            "$RUNNER_TEMP/guest-runtime" \
+            "$RUNNER_TEMP/qemu-11.0.2/build/qemu-img"
+          go run ./scripts/dev/verify-runtime \
+            --guest "$RUNNER_TEMP/guest-runtime/sealbuild-guest-runtime.tar.zst"
+
+      - name: Upload Guest Runtime
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sealbuild-guest-runtime-linux-amd64
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ runner.temp }}/guest-runtime/sealbuild-guest-runtime.tar.zst
+
+  build-host-linux-amd64:
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out Sealbuild
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install Linux Host build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            build-essential ca-certificates curl file git jq libaio-dev libattr1-dev \
+            libcap-ng-dev libfdt-dev libglib2.0-dev libpixman-1-dev libseccomp-dev \
+            libslirp-dev liburing-dev libzstd-dev meson ninja-build pkg-config \
+            python3 python3-packaging python3-pip python3-setuptools python3-venv \
+            python3-wheel zlib1g-dev zstd
+
+      - name: Download verified QEMU source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --output "$RUNNER_TEMP/qemu-11.0.2.tar.xz" "$QEMU_URL"
+          printf '%s  %s\n' "$QEMU_SHA256" "$RUNNER_TEMP/qemu-11.0.2.tar.xz" | sha256sum --check --status
+          tar -xJf "$RUNNER_TEMP/qemu-11.0.2.tar.xz" -C "$RUNNER_TEMP"
+
+      - name: Build Linux TCG-only QEMU
+        run: ./scripts/runtime/build-qemu-linux-amd64.sh "$RUNNER_TEMP/qemu-11.0.2" "$RUNNER_TEMP/qemu-build"
+
+      - name: Record Linux ELF and package evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          qemu="$RUNNER_TEMP/qemu-build/qemu-system-x86_64"
+          ldd "$qemu" | tee "$RUNNER_TEMP/elf-dependencies.txt"
+          awk '/=> \// {print $3} /ld-linux-x86-64/ {print $1}' "$RUNNER_TEMP/elf-dependencies.txt" |
+            while IFS= read -r library; do
+              package=$(dpkg-query -S "$(readlink -f "$library")" | head -n 1 | cut -d: -f1)
+              dpkg-query -W -f='${Package}\t${Version}\n' "$package"
+            done | sort -u > "$RUNNER_TEMP/dpkg-runtime-packages.txt"
+
+      - name: Collect licenses and package Linux Host Runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          licenses="$RUNNER_TEMP/linux-host-licenses"
+          mkdir -p "$licenses/qemu"
+          cp "$RUNNER_TEMP/qemu-11.0.2/COPYING" "$licenses/qemu/COPYING"
+          cp "$RUNNER_TEMP/qemu-11.0.2/COPYING.LIB" "$licenses/qemu/COPYING.LIB"
+          cp "$RUNNER_TEMP/qemu-11.0.2/LICENSE" "$licenses/qemu/LICENSE"
+          for package in libc6 libglib2.0-0t64 libpixman-1-0 libslirp0 libzstd1; do
+            mkdir -p "$licenses/$package"
+            cp "/usr/share/doc/$package/copyright" "$licenses/$package/copyright"
+          done
+          go run ./scripts/runtime/packagelinuxhost \
+            --qemu "$RUNNER_TEMP/qemu-build/qemu-system-x86_64" \
+            --library-dir /lib64 \
+            --library-dir /lib/x86_64-linux-gnu \
+            --library-dir /usr/lib/x86_64-linux-gnu \
+            --qemu-data-dir "$RUNNER_TEMP/qemu-11.0.2/pc-bios" \
+            --license-dir "$licenses" \
+            --lock ./runtime/host/linux-amd64/build.lock.json \
+            --output "$RUNNER_TEMP/sealbuild-host-runtime-linux-amd64.tar.zst"
+          go run ./scripts/dev/verify-runtime \
+            --host "$RUNNER_TEMP/sealbuild-host-runtime-linux-amd64.tar.zst"
+
+      - name: Verify packaged Linux QEMU without Host libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="$RUNNER_TEMP/linux-host-smoke"
+          mkdir "$runtime"
+          zstd --decompress --stdout "$RUNNER_TEMP/sealbuild-host-runtime-linux-amd64.tar.zst" | tar -xf - -C "$runtime"
+          output=$(env -i PATH=/usr/bin:/bin HOME="$RUNNER_TEMP" \
+            "$runtime/lib/ld-linux-x86-64.so.2" --inhibit-cache --library-path "$runtime/lib" \
+            "$runtime/bin/qemu-system-x86_64" -accel help)
+          test "$output" = $'Accelerators supported in QEMU binary:\ntcg'
+
+      - name: Upload Linux Host Runtime and dependency evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sealbuild-host-runtime-linux-amd64
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/sealbuild-host-runtime-linux-amd64.tar.zst
+            ${{ runner.temp }}/elf-dependencies.txt
+            ${{ runner.temp }}/dpkg-runtime-packages.txt
+
+  build-host-windows-amd64:
+    needs: quality
+    runs-on: windows-2025
+    timeout-minutes: 120
+    steps:
+      - name: Check out Sealbuild
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Set up fixed MSYS2 action
+        id: msys2
+        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884
+        with:
+          msystem: CLANG64
+          update: true
+          install: >-
+            base-devel
+            bison
+            diffutils
+            flex
+            git
+            mingw-w64-clang-x86_64-glib2
+            mingw-w64-clang-x86_64-libslirp
+            mingw-w64-clang-x86_64-ninja
+            mingw-w64-clang-x86_64-pixman
+            mingw-w64-clang-x86_64-pkgconf
+            mingw-w64-clang-x86_64-python
+            mingw-w64-clang-x86_64-python-setuptools
+            mingw-w64-clang-x86_64-python-wheel
+            mingw-w64-clang-x86_64-toolchain
+            mingw-w64-clang-x86_64-zstd
+
+      - name: Download verified QEMU source archive
+        shell: pwsh
+        run: |
+          $archive = "$env:RUNNER_TEMP\qemu-11.0.2.tar.xz"
+          curl.exe --fail --output $archive $env:QEMU_URL
+          if ($LASTEXITCODE -ne 0) { throw "download QEMU source failed" }
+          $actual = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLower()
+          if ($actual -ne $env:QEMU_SHA256) { throw "QEMU source SHA-256 is $actual, expected $env:QEMU_SHA256" }
+          tar.exe -xJf $archive -C $env:RUNNER_TEMP
+          if ($LASTEXITCODE -ne 0) { throw "extract QEMU source failed" }
+
+      - name: Build TCG-only Windows QEMU
+        shell: msys2 {0}
+        run: |
+          runner_temp=$(cygpath -u "$RUNNER_TEMP")
+          ./scripts/runtime/build-qemu-windows-amd64.sh \
+            "$runner_temp/qemu-11.0.2" \
+            "$runner_temp/qemu-build"
+
+      - name: Record exact MSYS2 packages
+        shell: msys2 {0}
+        run: |
+          runner_temp=$(cygpath -u "$RUNNER_TEMP")
+          pacman -Q | LC_ALL=C sort > "$runner_temp/msys2-packages.txt"
+
+      - name: Collect licenses and package Windows Host Runtime
+        shell: pwsh
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+        run: |
+          $licenses = "$env:RUNNER_TEMP\windows-host-licenses"
+          New-Item -ItemType Directory -Path "$licenses\qemu" | Out-Null
+          Copy-Item "$env:RUNNER_TEMP\qemu-11.0.2\COPYING" "$licenses\qemu\COPYING"
+          Copy-Item "$env:RUNNER_TEMP\qemu-11.0.2\COPYING.LIB" "$licenses\qemu\COPYING.LIB"
+          Copy-Item "$env:RUNNER_TEMP\qemu-11.0.2\LICENSE" "$licenses\qemu\LICENSE"
+          Copy-Item "$env:MSYS2_LOCATION\clang64\share\licenses" "$licenses\msys2" -Recurse
+          go run ./scripts/runtime/packagewindowshost `
+            --qemu "$env:RUNNER_TEMP\qemu-build\qemu-system-x86_64.exe" `
+            --dll-dir "$env:MSYS2_LOCATION\clang64\bin" `
+            --qemu-data-dir "$env:RUNNER_TEMP\qemu-11.0.2\pc-bios" `
+            --license-dir $licenses `
+            --lock ./runtime/host/windows-amd64/build.lock.json `
+            --output "$env:RUNNER_TEMP\sealbuild-host-runtime-windows-amd64.tar.zst"
+          go run ./scripts/dev/verify-runtime `
+            --host "$env:RUNNER_TEMP\sealbuild-host-runtime-windows-amd64.tar.zst"
+
+      - name: Verify packaged Windows QEMU
+        shell: pwsh
+        run: |
+          $runtime = "$env:RUNNER_TEMP\windows-host-smoke"
+          $runtimeTar = "$env:RUNNER_TEMP\windows-host-smoke.tar"
+          New-Item -ItemType Directory -Path $runtime | Out-Null
+          zstd.exe -d -f "$env:RUNNER_TEMP\sealbuild-host-runtime-windows-amd64.tar.zst" -o $runtimeTar
+          if ($LASTEXITCODE -ne 0) { throw "decompress Windows Host Runtime failed" }
+          tar.exe -xf $runtimeTar -C $runtime
+          if ($LASTEXITCODE -ne 0) { throw "extract Windows Host Runtime failed" }
+          $env:Path = "$env:SystemRoot\System32;$env:SystemRoot"
+          $output = & "$runtime\bin\qemu-system-x86_64.exe" -accel help | ForEach-Object { $_.TrimEnd("`r") }
+          if ($LASTEXITCODE -ne 0) { throw "packaged Windows QEMU failed" }
+          if (($output -join "`n") -ne "Accelerators supported in QEMU binary:`ntcg") {
+            throw "packaged Windows QEMU is not TCG-only: $($output -join ' | ')"
+          }
+
+      - name: Upload Windows Host Runtime and dependency evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sealbuild-host-runtime-windows-amd64
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/sealbuild-host-runtime-windows-amd64.tar.zst
+            ${{ runner.temp }}/msys2-packages.txt
+
+  build-host-darwin-arm64:
+    needs: quality
+    runs-on: macos-15
+    timeout-minutes: 120
+    steps:
+      - name: Check out Sealbuild
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install Darwin ARM64 Host build dependencies
+        run: /opt/homebrew/bin/brew install glib jq libslirp ninja pcre2 pixman pkg-config python@3.14 zstd
+
+      - name: Download verified QEMU source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --output "$RUNNER_TEMP/qemu-11.0.2.tar.xz" "$QEMU_URL"
+          printf '%s  %s\n' "$QEMU_SHA256" "$RUNNER_TEMP/qemu-11.0.2.tar.xz" | shasum -a 256 --check --status
+          tar -xJf "$RUNNER_TEMP/qemu-11.0.2.tar.xz" -C "$RUNNER_TEMP"
+
+      - name: Build and package Darwin ARM64 Host Runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          homebrew_root=/opt/homebrew
+          python="$homebrew_root/opt/python@3.14/bin/python3.14"
+          setuptools_wheel=$(find "$homebrew_root/Cellar/python@3.14" -type f -name 'setuptools-79.0.1-py3-none-any.whl' -print -quit)
+          test -n "$setuptools_wheel"
+          ./scripts/runtime/build-qemu-darwin.sh arm64 "$homebrew_root" "$python" "$setuptools_wheel" \
+            "$RUNNER_TEMP/qemu-11.0.2" "$RUNNER_TEMP/qemu-build"
+          ./scripts/runtime/fetch-host-licenses.sh \
+            ./runtime/host/darwin-arm64/build.lock.json \
+            "$RUNNER_TEMP/darwin-license-sources" \
+            "$RUNNER_TEMP/darwin-licenses"
+          go run ./scripts/runtime/packagehost \
+            --host-architecture arm64 \
+            --homebrew-root "$homebrew_root" \
+            --qemu "$RUNNER_TEMP/qemu-build/qemu-system-x86_64" \
+            --qemu-data-dir "$RUNNER_TEMP/qemu-11.0.2/pc-bios" \
+            --qemu-license-dir "$RUNNER_TEMP/darwin-licenses/qemu" \
+            --dependency-license-dir "$RUNNER_TEMP/darwin-licenses" \
+            --lock ./runtime/host/darwin-arm64/build.lock.json \
+            --output "$RUNNER_TEMP/sealbuild-host-runtime-darwin-arm64.tar.zst"
+          go run ./scripts/dev/verify-runtime \
+            --host "$RUNNER_TEMP/sealbuild-host-runtime-darwin-arm64.tar.zst"
+
+      - name: Verify packaged Darwin ARM64 QEMU
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="$RUNNER_TEMP/darwin-host-smoke"
+          mkdir "$runtime"
+          /opt/homebrew/bin/zstd --decompress --stdout "$RUNNER_TEMP/sealbuild-host-runtime-darwin-arm64.tar.zst" | tar -xf - -C "$runtime"
+          output=$(env -i PATH=/usr/bin:/bin HOME="$RUNNER_TEMP" "$runtime/bin/qemu-system-x86_64" -accel help)
+          test "$output" = $'Accelerators supported in QEMU binary:\ntcg'
+
+      - name: Upload Darwin ARM64 Host Runtime
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sealbuild-host-runtime-darwin-arm64
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ runner.temp }}/sealbuild-host-runtime-darwin-arm64.tar.zst
+
+  build-host-darwin-amd64:
+    needs: quality
+    runs-on: macos-15-intel
+    timeout-minutes: 120
+    steps:
+      - name: Check out Sealbuild
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install Darwin AMD64 Host build dependencies
+        run: /usr/local/bin/brew install glib jq libslirp ninja pcre2 pixman pkg-config python@3.14 zstd
+
+      - name: Download verified QEMU source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --output "$RUNNER_TEMP/qemu-11.0.2.tar.xz" "$QEMU_URL"
+          printf '%s  %s\n' "$QEMU_SHA256" "$RUNNER_TEMP/qemu-11.0.2.tar.xz" | shasum -a 256 --check --status
+          tar -xJf "$RUNNER_TEMP/qemu-11.0.2.tar.xz" -C "$RUNNER_TEMP"
+
+      - name: Build and package Darwin AMD64 Host Runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          homebrew_root=/usr/local
+          python="$homebrew_root/opt/python@3.14/bin/python3.14"
+          setuptools_wheel=$(find "$homebrew_root/Cellar/python@3.14" -type f -name 'setuptools-79.0.1-py3-none-any.whl' -print -quit)
+          test -n "$setuptools_wheel"
+          ./scripts/runtime/build-qemu-darwin.sh amd64 "$homebrew_root" "$python" "$setuptools_wheel" \
+            "$RUNNER_TEMP/qemu-11.0.2" "$RUNNER_TEMP/qemu-build"
+          ./scripts/runtime/fetch-host-licenses.sh \
+            ./runtime/host/darwin-amd64/build.lock.json \
+            "$RUNNER_TEMP/darwin-license-sources" \
+            "$RUNNER_TEMP/darwin-licenses"
+          go run ./scripts/runtime/packagehost \
+            --host-architecture amd64 \
+            --homebrew-root "$homebrew_root" \
+            --qemu "$RUNNER_TEMP/qemu-build/qemu-system-x86_64" \
+            --qemu-data-dir "$RUNNER_TEMP/qemu-11.0.2/pc-bios" \
+            --qemu-license-dir "$RUNNER_TEMP/darwin-licenses/qemu" \
+            --dependency-license-dir "$RUNNER_TEMP/darwin-licenses" \
+            --lock ./runtime/host/darwin-amd64/build.lock.json \
+            --output "$RUNNER_TEMP/sealbuild-host-runtime-darwin-amd64.tar.zst"
+          go run ./scripts/dev/verify-runtime \
+            --host "$RUNNER_TEMP/sealbuild-host-runtime-darwin-amd64.tar.zst"
+
+      - name: Verify packaged Darwin AMD64 QEMU
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="$RUNNER_TEMP/darwin-host-smoke"
+          mkdir "$runtime"
+          /usr/local/bin/zstd --decompress --stdout "$RUNNER_TEMP/sealbuild-host-runtime-darwin-amd64.tar.zst" | tar -xf - -C "$runtime"
+          output=$(env -i PATH=/usr/bin:/bin HOME="$RUNNER_TEMP" "$runtime/bin/qemu-system-x86_64" -accel help)
+          test "$output" = $'Accelerators supported in QEMU binary:\ntcg'
+
+      - name: Upload Darwin AMD64 Host Runtime
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sealbuild-host-runtime-darwin-amd64
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ runner.temp }}/sealbuild-host-runtime-darwin-amd64.tar.zst
+
+  test-linux-amd64:
+    needs: [build-guest-runtime, build-host-linux-amd64]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Check out Sealbuild
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Download Guest Runtime
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: sealbuild-guest-runtime-linux-amd64
+          path: ${{ runner.temp }}/guest
+
+      - name: Download Linux Host Runtime
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: sealbuild-host-runtime-linux-amd64
+          path: ${{ runner.temp }}/host
+
+      - name: Build Linux candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test ./... -count=1
+          go run ./scripts/dev/verify-runtime --host "$RUNNER_TEMP/host/sealbuild-host-runtime-linux-amd64.tar.zst" --guest "$RUNNER_TEMP/guest/sealbuild-guest-runtime.tar.zst"
+          ./scripts/dev/prepare-runtime-assets.sh "$RUNNER_TEMP/host/sealbuild-host-runtime-linux-amd64.tar.zst" "$RUNNER_TEMP/guest/sealbuild-guest-runtime.tar.zst"
+          version=dev
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then version="$GITHUB_REF_NAME"; fi
+          epoch=$(git show -s --format=%ct "$GITHUB_SHA")
+          built_at=$(date -u -d "@$epoch" '+%Y-%m-%dT%H:%M:%SZ')
+          ldflags="-s -w -X github.com/labring/sealbuild/internal/version.Version=$version -X github.com/labring/sealbuild/internal/version.Commit=$GITHUB_SHA -X github.com/labring/sealbuild/internal/version.BuiltAt=$built_at"
+          CGO_ENABLED=0 go build -trimpath -buildvcs=false -tags sealbuild_runtime -ldflags "$ldflags" -o "$RUNNER_TEMP/sealbuild-linux-amd64" ./cmd/sealbuild
+          test "$(stat -c %s "$RUNNER_TEMP/sealbuild-linux-amd64")" -lt 157286400
+          "$RUNNER_TEMP/sealbuild-linux-amd64" version | tee "$RUNNER_TEMP/version.txt"
+          grep -F "sealbuild $version" "$RUNNER_TEMP/version.txt"
+          grep -F "commit: $GITHUB_SHA" "$RUNNER_TEMP/version.txt"
+          grep -F "built: $built_at" "$RUNNER_TEMP/version.txt"
+
+      - name: Run two isolated Linux Dockerfile builds
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/Sealbuild Product Test"
+          home="$work/User Home"
+          mkdir -p "$home"
+          cp "$RUNNER_TEMP/sealbuild-linux-amd64" "$work/sealbuild-linux-amd64"
+          cp -R ./runtime/testdata/local-build "$work/context"
+          assert_no_qemu() {
+            if pgrep -x qemu-system-x86_64 >/dev/null; then
+              echo 'QEMU process remains after build' >&2
+              exit 1
+            fi
+          }
+          env -i HOME="$home" PATH=/usr/bin:/bin "$work/sealbuild-linux-amd64" build --output "$work/first.oci.tar" "$work/context" 2>&1 | tee "$work/first-build.log"
+          assert_no_qemu
+          env -i HOME="$home" PATH=/usr/bin:/bin "$work/sealbuild-linux-amd64" build --output "$work/cached.oci.tar" "$work/context" 2>&1 | tee "$work/cached-build.log"
+          assert_no_qemu
+          grep -F 'CACHED' "$work/cached-build.log"
+          test "$(find "$home/.cache/sealbuild/logs" -type f -name 'vm-*.serial.log' | wc -l | tr -d ' ')" -eq 2
+
+      - name: Verify Linux OCI archives and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/Sealbuild Product Test"
+          go run ./scripts/dev/verify-oci "$work/first.oci.tar" | tee "$work/first-oci.txt"
+          go run ./scripts/dev/verify-oci "$work/cached.oci.tar" | tee "$work/cached-oci.txt"
+          cd "$RUNNER_TEMP"
+          sha256sum sealbuild-linux-amd64 > platform-checksums.txt
+
+      - name: Upload Linux candidate and evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sealbuild-linux-amd64-candidate
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/sealbuild-linux-amd64
+            ${{ runner.temp }}/platform-checksums.txt
+            ${{ runner.temp }}/version.txt
+            ${{ runner.temp }}/Sealbuild Product Test/first-build.log
+            ${{ runner.temp }}/Sealbuild Product Test/cached-build.log
+            ${{ runner.temp }}/Sealbuild Product Test/first-oci.txt
+            ${{ runner.temp }}/Sealbuild Product Test/cached-oci.txt
+
+  test-windows-amd64:
+    needs: [build-guest-runtime, build-host-windows-amd64]
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - name: Check out Sealbuild
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Download Guest Runtime
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: sealbuild-guest-runtime-linux-amd64
+          path: ${{ runner.temp }}/guest
+
+      - name: Download Windows Host Runtime
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: sealbuild-host-runtime-windows-amd64
+          path: ${{ runner.temp }}/host
+
+      - name: Build Windows candidate
+        shell: pwsh
+        run: |
+          go test ./... -count=1
+          go run ./scripts/dev/verify-runtime `
+            --host "$env:RUNNER_TEMP\host\sealbuild-host-runtime-windows-amd64.tar.zst" `
+            --guest "$env:RUNNER_TEMP\guest\sealbuild-guest-runtime.tar.zst"
+          New-Item -ItemType Directory -Path ./internal/runtimeassets/generated | Out-Null
+          Copy-Item "$env:RUNNER_TEMP\host\sealbuild-host-runtime-windows-amd64.tar.zst" ./internal/runtimeassets/generated/host.tar.zst
+          Copy-Item "$env:RUNNER_TEMP\guest\sealbuild-guest-runtime.tar.zst" ./internal/runtimeassets/generated/guest.tar.zst
+          $version = 'dev'
+          if ($env:GITHUB_REF.StartsWith('refs/tags/')) { $version = $env:GITHUB_REF_NAME }
+          $epoch = [Int64](git show -s --format=%ct $env:GITHUB_SHA)
+          $builtAt = [DateTimeOffset]::FromUnixTimeSeconds($epoch).UtcDateTime.ToString('yyyy-MM-ddTHH:mm:ssZ')
+          $ldflags = "-s -w -X github.com/labring/sealbuild/internal/version.Version=$version -X github.com/labring/sealbuild/internal/version.Commit=$env:GITHUB_SHA -X github.com/labring/sealbuild/internal/version.BuiltAt=$builtAt"
+          $env:CGO_ENABLED = '0'
+          go build -trimpath -buildvcs=false -tags sealbuild_runtime -ldflags $ldflags -o "$env:RUNNER_TEMP\sealbuild-windows-amd64.exe" ./cmd/sealbuild
+          $binary = Get-Item "$env:RUNNER_TEMP\sealbuild-windows-amd64.exe"
+          if ($binary.Length -ge 150MB) { throw "Windows product is $($binary.Length) bytes; limit is 150 MiB" }
+          & "$env:RUNNER_TEMP\sealbuild-windows-amd64.exe" version | Tee-Object -FilePath "$env:RUNNER_TEMP\version.txt"
+          if ($LASTEXITCODE -ne 0) { throw "Windows candidate version failed" }
+          Select-String -Path "$env:RUNNER_TEMP\version.txt" -SimpleMatch "sealbuild $version" | Out-Null
+          Select-String -Path "$env:RUNNER_TEMP\version.txt" -SimpleMatch "commit: $env:GITHUB_SHA" | Out-Null
+          Select-String -Path "$env:RUNNER_TEMP\version.txt" -SimpleMatch "built: $builtAt" | Out-Null
+
+      - name: Run two isolated Windows Dockerfile builds
+        shell: pwsh
+        run: |
+          $work = "$env:RUNNER_TEMP\Sealbuild Product Test"
+          $env:LOCALAPPDATA = "$work\Local AppData"
+          $env:USERPROFILE = "$work\User Profile"
+          New-Item -ItemType Directory -Path $env:LOCALAPPDATA | Out-Null
+          New-Item -ItemType Directory -Path $env:USERPROFILE | Out-Null
+          Copy-Item "$env:RUNNER_TEMP\sealbuild-windows-amd64.exe" "$work\sealbuild-windows-amd64.exe"
+          Copy-Item ./runtime/testdata/local-build "$work\context" -Recurse
+          $env:Path = "$env:SystemRoot\System32;$env:SystemRoot"
+          Remove-Item Env:DOCKER_HOST -ErrorAction SilentlyContinue
+          function Assert-NoQEMU {
+            if ($null -ne (Get-Process -Name qemu-system-x86_64 -ErrorAction SilentlyContinue)) {
+              throw 'QEMU process remains after build'
+            }
+          }
+          & "$work\sealbuild-windows-amd64.exe" build --output "$work\first.oci.tar" "$work\context" 2>&1 | Tee-Object -FilePath "$work\first-build.log"
+          if ($LASTEXITCODE -ne 0) { throw "first Sealbuild build failed" }
+          Assert-NoQEMU
+          & "$work\sealbuild-windows-amd64.exe" build --output "$work\cached.oci.tar" "$work\context" 2>&1 | Tee-Object -FilePath "$work\cached-build.log"
+          if ($LASTEXITCODE -ne 0) { throw "cached Sealbuild build failed" }
+          Assert-NoQEMU
+          Select-String -Path "$work\cached-build.log" -SimpleMatch 'CACHED' | Out-Null
+          $serialLogs = @(Get-ChildItem "$env:LOCALAPPDATA\sealbuild\logs\vm-*.serial.log")
+          if ($serialLogs.Count -ne 2) { throw "serial log count is $($serialLogs.Count), expected 2" }
+
+      - name: Verify Windows OCI archives and checksum
+        shell: pwsh
+        run: |
+          $work = "$env:RUNNER_TEMP\Sealbuild Product Test"
+          go run ./scripts/dev/verify-oci "$work\first.oci.tar" | Tee-Object -FilePath "$work\first-oci.txt"
+          go run ./scripts/dev/verify-oci "$work\cached.oci.tar" | Tee-Object -FilePath "$work\cached-oci.txt"
+          $hash = Get-FileHash "$env:RUNNER_TEMP\sealbuild-windows-amd64.exe" -Algorithm SHA256
+          "$($hash.Hash.ToLower())  sealbuild-windows-amd64.exe" | Set-Content "$env:RUNNER_TEMP\platform-checksums.txt"
+
+      - name: Upload Windows candidate and evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sealbuild-windows-amd64-candidate
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/sealbuild-windows-amd64.exe
+            ${{ runner.temp }}/platform-checksums.txt
+            ${{ runner.temp }}/version.txt
+            ${{ runner.temp }}/Sealbuild Product Test/first-build.log
+            ${{ runner.temp }}/Sealbuild Product Test/cached-build.log
+            ${{ runner.temp }}/Sealbuild Product Test/first-oci.txt
+            ${{ runner.temp }}/Sealbuild Product Test/cached-oci.txt
+
+  test-darwin-arm64:
+    needs: [build-guest-runtime, build-host-darwin-arm64]
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - name: Check out Sealbuild
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Download Guest Runtime
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: sealbuild-guest-runtime-linux-amd64
+          path: ${{ runner.temp }}/guest
+      - name: Download Darwin ARM64 Host Runtime
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: sealbuild-host-runtime-darwin-arm64
+          path: ${{ runner.temp }}/host
+      - name: Build Darwin ARM64 candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test ./... -count=1
+          go run ./scripts/dev/verify-runtime --host "$RUNNER_TEMP/host/sealbuild-host-runtime-darwin-arm64.tar.zst" --guest "$RUNNER_TEMP/guest/sealbuild-guest-runtime.tar.zst"
+          ./scripts/dev/prepare-runtime-assets.sh "$RUNNER_TEMP/host/sealbuild-host-runtime-darwin-arm64.tar.zst" "$RUNNER_TEMP/guest/sealbuild-guest-runtime.tar.zst"
+          version=dev
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then version="$GITHUB_REF_NAME"; fi
+          epoch=$(git show -s --format=%ct "$GITHUB_SHA")
+          built_at=$(date -u -r "$epoch" '+%Y-%m-%dT%H:%M:%SZ')
+          ldflags="-s -w -X github.com/labring/sealbuild/internal/version.Version=$version -X github.com/labring/sealbuild/internal/version.Commit=$GITHUB_SHA -X github.com/labring/sealbuild/internal/version.BuiltAt=$built_at"
+          CGO_ENABLED=0 go build -trimpath -buildvcs=false -tags sealbuild_runtime -ldflags "$ldflags" -o "$RUNNER_TEMP/sealbuild-darwin-arm64" ./cmd/sealbuild
+          test "$(stat -f %z "$RUNNER_TEMP/sealbuild-darwin-arm64")" -lt 157286400
+          "$RUNNER_TEMP/sealbuild-darwin-arm64" version | tee "$RUNNER_TEMP/version.txt"
+          grep -F "sealbuild $version" "$RUNNER_TEMP/version.txt"
+          grep -F "commit: $GITHUB_SHA" "$RUNNER_TEMP/version.txt"
+          grep -F "built: $built_at" "$RUNNER_TEMP/version.txt"
+      - name: Run two isolated Darwin ARM64 Dockerfile builds
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/Sealbuild Product Test"
+          home="$work/User Home"
+          mkdir -p "$home"
+          cp "$RUNNER_TEMP/sealbuild-darwin-arm64" "$work/sealbuild-darwin-arm64"
+          cp -R ./runtime/testdata/local-build "$work/context"
+          assert_no_qemu() { if pgrep -x qemu-system-x86_64 >/dev/null; then echo 'QEMU process remains after build' >&2; exit 1; fi; }
+          env -i HOME="$home" PATH=/usr/bin:/bin "$work/sealbuild-darwin-arm64" build --output "$work/first.oci.tar" "$work/context" 2>&1 | tee "$work/first-build.log"
+          assert_no_qemu
+          env -i HOME="$home" PATH=/usr/bin:/bin "$work/sealbuild-darwin-arm64" build --output "$work/cached.oci.tar" "$work/context" 2>&1 | tee "$work/cached-build.log"
+          assert_no_qemu
+          grep -F 'CACHED' "$work/cached-build.log"
+          test "$(find "$home/Library/Caches/sealbuild/logs" -type f -name 'vm-*.serial.log' | wc -l | tr -d ' ')" -eq 2
+      - name: Verify Darwin ARM64 OCI archives and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/Sealbuild Product Test"
+          go run ./scripts/dev/verify-oci "$work/first.oci.tar" | tee "$work/first-oci.txt"
+          go run ./scripts/dev/verify-oci "$work/cached.oci.tar" | tee "$work/cached-oci.txt"
+          cd "$RUNNER_TEMP"
+          shasum -a 256 sealbuild-darwin-arm64 > platform-checksums.txt
+      - name: Upload Darwin ARM64 candidate and evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sealbuild-darwin-arm64-candidate
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/sealbuild-darwin-arm64
+            ${{ runner.temp }}/platform-checksums.txt
+            ${{ runner.temp }}/version.txt
+            ${{ runner.temp }}/Sealbuild Product Test/first-build.log
+            ${{ runner.temp }}/Sealbuild Product Test/cached-build.log
+            ${{ runner.temp }}/Sealbuild Product Test/first-oci.txt
+            ${{ runner.temp }}/Sealbuild Product Test/cached-oci.txt
+
+  test-darwin-amd64:
+    needs: [build-guest-runtime, build-host-darwin-amd64]
+    runs-on: macos-15-intel
+    timeout-minutes: 90
+    steps:
+      - name: Check out Sealbuild
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Download Guest Runtime
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: sealbuild-guest-runtime-linux-amd64
+          path: ${{ runner.temp }}/guest
+      - name: Download Darwin AMD64 Host Runtime
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: sealbuild-host-runtime-darwin-amd64
+          path: ${{ runner.temp }}/host
+      - name: Build Darwin AMD64 candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test ./... -count=1
+          go run ./scripts/dev/verify-runtime --host "$RUNNER_TEMP/host/sealbuild-host-runtime-darwin-amd64.tar.zst" --guest "$RUNNER_TEMP/guest/sealbuild-guest-runtime.tar.zst"
+          ./scripts/dev/prepare-runtime-assets.sh "$RUNNER_TEMP/host/sealbuild-host-runtime-darwin-amd64.tar.zst" "$RUNNER_TEMP/guest/sealbuild-guest-runtime.tar.zst"
+          version=dev
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then version="$GITHUB_REF_NAME"; fi
+          epoch=$(git show -s --format=%ct "$GITHUB_SHA")
+          built_at=$(date -u -r "$epoch" '+%Y-%m-%dT%H:%M:%SZ')
+          ldflags="-s -w -X github.com/labring/sealbuild/internal/version.Version=$version -X github.com/labring/sealbuild/internal/version.Commit=$GITHUB_SHA -X github.com/labring/sealbuild/internal/version.BuiltAt=$built_at"
+          CGO_ENABLED=0 go build -trimpath -buildvcs=false -tags sealbuild_runtime -ldflags "$ldflags" -o "$RUNNER_TEMP/sealbuild-darwin-amd64" ./cmd/sealbuild
+          test "$(stat -f %z "$RUNNER_TEMP/sealbuild-darwin-amd64")" -lt 157286400
+          "$RUNNER_TEMP/sealbuild-darwin-amd64" version | tee "$RUNNER_TEMP/version.txt"
+          grep -F "sealbuild $version" "$RUNNER_TEMP/version.txt"
+          grep -F "commit: $GITHUB_SHA" "$RUNNER_TEMP/version.txt"
+          grep -F "built: $built_at" "$RUNNER_TEMP/version.txt"
+      - name: Run two isolated Darwin AMD64 Dockerfile builds
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/Sealbuild Product Test"
+          home="$work/User Home"
+          mkdir -p "$home"
+          cp "$RUNNER_TEMP/sealbuild-darwin-amd64" "$work/sealbuild-darwin-amd64"
+          cp -R ./runtime/testdata/local-build "$work/context"
+          assert_no_qemu() { if pgrep -x qemu-system-x86_64 >/dev/null; then echo 'QEMU process remains after build' >&2; exit 1; fi; }
+          env -i HOME="$home" PATH=/usr/bin:/bin "$work/sealbuild-darwin-amd64" build --output "$work/first.oci.tar" "$work/context" 2>&1 | tee "$work/first-build.log"
+          assert_no_qemu
+          env -i HOME="$home" PATH=/usr/bin:/bin "$work/sealbuild-darwin-amd64" build --output "$work/cached.oci.tar" "$work/context" 2>&1 | tee "$work/cached-build.log"
+          assert_no_qemu
+          grep -F 'CACHED' "$work/cached-build.log"
+          test "$(find "$home/Library/Caches/sealbuild/logs" -type f -name 'vm-*.serial.log' | wc -l | tr -d ' ')" -eq 2
+      - name: Verify Darwin AMD64 OCI archives and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/Sealbuild Product Test"
+          go run ./scripts/dev/verify-oci "$work/first.oci.tar" | tee "$work/first-oci.txt"
+          go run ./scripts/dev/verify-oci "$work/cached.oci.tar" | tee "$work/cached-oci.txt"
+          cd "$RUNNER_TEMP"
+          shasum -a 256 sealbuild-darwin-amd64 > platform-checksums.txt
+      - name: Upload Darwin AMD64 candidate and evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sealbuild-darwin-amd64-candidate
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/sealbuild-darwin-amd64
+            ${{ runner.temp }}/platform-checksums.txt
+            ${{ runner.temp }}/version.txt
+            ${{ runner.temp }}/Sealbuild Product Test/first-build.log
+            ${{ runner.temp }}/Sealbuild Product Test/cached-build.log
+            ${{ runner.temp }}/Sealbuild Product Test/first-oci.txt
+            ${{ runner.temp }}/Sealbuild Product Test/cached-oci.txt
+
+  aggregate:
+    needs: [test-linux-amd64, test-windows-amd64, test-darwin-arm64, test-darwin-amd64]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out Sealbuild
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Download Linux candidate
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: sealbuild-linux-amd64-candidate
+          path: ${{ runner.temp }}/candidates/linux
+      - name: Download Windows candidate
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: sealbuild-windows-amd64-candidate
+          path: ${{ runner.temp }}/candidates/windows
+      - name: Download Darwin ARM64 candidate
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: sealbuild-darwin-arm64-candidate
+          path: ${{ runner.temp }}/candidates/darwin-arm64
+      - name: Download Darwin AMD64 candidate
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: sealbuild-darwin-amd64-candidate
+          path: ${{ runner.temp }}/candidates/darwin-amd64
+      - name: Verify platform checksums and aggregate exact release files
+        shell: bash
+        run: |
+          set -euo pipefail
+          for platform in linux windows darwin-arm64 darwin-amd64; do
+            (cd "$RUNNER_TEMP/candidates/$platform" && sha256sum --check platform-checksums.txt)
+          done
+          input="$RUNNER_TEMP/release-input"
+          mkdir "$input"
+          cp "$RUNNER_TEMP/candidates/linux/sealbuild-linux-amd64" "$input/"
+          cp "$RUNNER_TEMP/candidates/windows/sealbuild-windows-amd64.exe" "$input/"
+          cp "$RUNNER_TEMP/candidates/darwin-arm64/sealbuild-darwin-arm64" "$input/"
+          cp "$RUNNER_TEMP/candidates/darwin-amd64/sealbuild-darwin-amd64" "$input/"
+          version=dev
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then version="$GITHUB_REF_NAME"; fi
+          epoch=$(git show -s --format=%ct "$GITHUB_SHA")
+          built_at=$(date -u -d "@$epoch" '+%Y-%m-%dT%H:%M:%SZ')
+          go run ./scripts/dev/aggregatecandidate \
+            --input "$input" \
+            --output "$RUNNER_TEMP/release" \
+            --version "$version" \
+            --commit "$GITHUB_SHA" \
+            --built-at "$built_at"
+      - name: Upload unified four-host candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sealbuild-four-host-candidate
+          if-no-files-found: error
+          retention-days: 14
+          path: ${{ runner.temp }}/release
+
+  publish-rc:
+    needs: aggregate
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - name: Validate exact RC tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[1-9][0-9]*$ ]]; then
+            echo "invalid RC tag: $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+      - name: Download unified candidate
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: sealbuild-four-host-candidate
+          path: ${{ runner.temp }}/release
+      - name: Verify and publish immutable Pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/release"
+          sha256sum --check checksums.txt
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "GitHub Release already exists: $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+          printf '%s\n' \
+            'Sealbuild four-host release candidate.' \
+            '' \
+            'All artifacts passed GitHub Actions Dockerfile builds for linux/amd64.' \
+            'Final Windows Home, Linux, Apple Silicon Mac, and Intel Mac device acceptance is still required.' \
+            > "$RUNNER_TEMP/release-notes.md"
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --prerelease \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file "$RUNNER_TEMP/release-notes.md" \
+            sealbuild-darwin-arm64 \
+            sealbuild-darwin-amd64 \
+            sealbuild-linux-amd64 \
+            sealbuild-windows-amd64.exe \
+            checksums.txt

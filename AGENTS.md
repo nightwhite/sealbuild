@@ -208,7 +208,9 @@ GitHub Actions 根据 Git Tag 自动测试、构建并发布：
 - 为每个平台嵌入正确的宿主 QEMU 和相同的 `linux/amd64` Guest Runtime。
 - 为所有发布文件生成 SHA-256，并在缺少任一平台产物或校验项时终止发布。
 - 发布文件必须不可变；同一 Tag 不允许悄悄替换不同内容。
-- 不要求 Sealbuild 本身在 GitHub Actions Runner 内执行镜像构建；GitHub Actions 首期只负责项目测试和版本发布。
+- 四个平台发布候选必须分别在对应 GitHub Actions Runner 内执行两次真实 Dockerfile 构建；第二次必须命中持久缓存，两个 OCI 都必须严格为 `linux/amd64`，构建结束不得残留 QEMU 进程。
+- Git Tag Release 必须重新构建并验收当前 Tag 的四个平台产物，禁止复用其他 Workflow Run 的旧候选。
+- 缺少任一平台候选、真实构建证据、缓存证据、OCI 平台校验、QEMU 清理证据或 SHA-256 时禁止发布。
 
 ## 测试与验收
 
@@ -231,6 +233,7 @@ gofmt -l ./cmd ./internal
 go vet ./...
 go test ./...
 go build ./cmd/sealbuild
+./out/tools/actionlint .github/workflows/four-host-candidate.yml
 ```
 
 发布前还必须执行项目后续定义的 Runtime 校验和四平台打包命令；这些命令落地后同步更新本文件，禁止在文档中提前编造不存在的脚本。
