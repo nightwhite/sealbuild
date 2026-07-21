@@ -245,6 +245,7 @@ func TestBuildFailureLeavesNoFinalOutput(t *testing.T) {
 	writeTestFile(t, payloadDir, "payload", []byte("payload"), 0o644)
 	outputPath := filepath.Join(t.TempDir(), "runtime.tar.zst")
 	manifest := validBuildManifest()
+	manifest.Platform.OS = "freebsd"
 	manifest.Platform.Architecture = "amd64"
 
 	_, err := Build(BuildConfig{

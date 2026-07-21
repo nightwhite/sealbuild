@@ -70,7 +70,7 @@ func (manifest ArtifactManifest) Validate() error {
 	switch manifest.Kind {
 	case ArtifactKindHost:
 		if !manifest.Platform.isSupportedHost() {
-			return fmt.Errorf("host platform must be darwin/arm64 or windows/amd64")
+			return fmt.Errorf("host platform is unsupported: %s/%s", manifest.Platform.OS, manifest.Platform.Architecture)
 		}
 	case ArtifactKindGuest:
 		if manifest.Platform.OS != "linux" || manifest.Platform.Architecture != "amd64" {
@@ -122,6 +122,8 @@ func (manifest ArtifactManifest) Validate() error {
 
 func (platform Platform) isSupportedHost() bool {
 	return platform == (Platform{OS: "darwin", Architecture: "arm64"}) ||
+		platform == (Platform{OS: "darwin", Architecture: "amd64"}) ||
+		platform == (Platform{OS: "linux", Architecture: "amd64"}) ||
 		platform == (Platform{OS: "windows", Architecture: "amd64"})
 }
 

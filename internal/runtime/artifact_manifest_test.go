@@ -22,6 +22,24 @@ func TestArtifactManifestAcceptsWindowsAMD64Host(t *testing.T) {
 	}
 }
 
+func TestArtifactManifestAcceptsDarwinIntelHost(t *testing.T) {
+	manifest := validArtifactManifest()
+	manifest.Platform = Platform{OS: "darwin", Architecture: "amd64"}
+
+	if err := manifest.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestArtifactManifestAcceptsLinuxAMD64Host(t *testing.T) {
+	manifest := validArtifactManifest()
+	manifest.Platform = Platform{OS: "linux", Architecture: "amd64"}
+
+	if err := manifest.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
 func TestArtifactManifestAcceptsLinuxAMD64Guest(t *testing.T) {
 	manifest := validArtifactManifest()
 	manifest.Kind = ArtifactKindGuest
@@ -50,8 +68,8 @@ func TestArtifactManifestRejectsInvalidMetadata(t *testing.T) {
 		},
 		{
 			name:      "wrong host platform",
-			mutate:    func(manifest *ArtifactManifest) { manifest.Platform = Platform{OS: "linux", Architecture: "amd64"} },
-			wantError: "host platform must be darwin/arm64 or windows/amd64",
+			mutate:    func(manifest *ArtifactManifest) { manifest.Platform = Platform{OS: "freebsd", Architecture: "amd64"} },
+			wantError: "host platform is unsupported",
 		},
 		{
 			name: "wrong guest platform",

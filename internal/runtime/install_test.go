@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 	"time"
@@ -89,7 +90,7 @@ func TestInstallerRejectsCorruptExistingRuntime(t *testing.T) {
 func TestInstallerRejectsHostRuntimeForAnotherPlatform(t *testing.T) {
 	workspace := t.TempDir()
 	bundle := installerBundle(t, workspace)
-	bundle.Host = installerArtifactForPlatform(t, workspace, "wrong-host", runtimepkg.ArtifactKindHost, runtimepkg.Platform{OS: "windows", Architecture: "amd64"}, map[string]installerFile{
+	bundle.Host = installerArtifactForPlatform(t, workspace, "wrong-host", runtimepkg.ArtifactKindHost, differentHostPlatform(), map[string]installerFile{
 		"bin/qemu-system-x86_64.exe": {contents: "qemu", mode: 0o755},
 	})
 	installer := runtimepkg.Installer{Layout: cache.Layout{Root: filepath.Join(workspace, "cache")}}
@@ -182,11 +183,26 @@ type installerFile struct {
 
 func installerArtifact(t *testing.T, workspace, name string, kind runtimepkg.ArtifactKind, files map[string]installerFile) runtimepkg.Asset {
 	t.Helper()
-	platform := runtimepkg.Platform{OS: "darwin", Architecture: "arm64"}
+	platform := runtimepkg.Platform{OS: goruntime.GOOS, Architecture: goruntime.GOARCH}
 	if kind == runtimepkg.ArtifactKindGuest {
 		platform = runtimepkg.Platform{OS: "linux", Architecture: "amd64"}
 	}
 	return installerArtifactForPlatform(t, workspace, name, kind, platform, files)
+}
+
+func differentHostPlatform() runtimepkg.Platform {
+	current := runtimepkg.Platform{OS: goruntime.GOOS, Architecture: goruntime.GOARCH}
+	for _, candidate := range []runtimepkg.Platform{
+		{OS: "darwin", Architecture: "arm64"},
+		{OS: "darwin", Architecture: "amd64"},
+		{OS: "linux", Architecture: "amd64"},
+		{OS: "windows", Architecture: "amd64"},
+	} {
+		if candidate != current {
+			return candidate
+		}
+	}
+	return runtimepkg.Platform{OS: "freebsd", Architecture: "amd64"}
 }
 
 func installerArtifactForPlatform(t *testing.T, workspace, name string, kind runtimepkg.ArtifactKind, platform runtimepkg.Platform, files map[string]installerFile) runtimepkg.Asset {

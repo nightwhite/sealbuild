@@ -21,6 +21,8 @@ func TestWindowsWorkflowDefinesIsolatedRuntimeAndProductAcceptance(t *testing.T)
 		"https://download.qemu.org/qemu-11.0.2.tar.xz",
 		"3745f6ea88e2e87fe0dc838b2b1d4e0a770bf48e01a1d5a186842a1fff76ccf5",
 		"./scripts/runtime/build-qemu-windows-amd64.sh",
+		"mingw-w64-clang-x86_64-python-setuptools",
+		"mingw-w64-clang-x86_64-python-wheel",
 		"sealbuild-windows-amd64.exe\" build",
 		"first.oci.tar",
 		"cached.oci.tar",
