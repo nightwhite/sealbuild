@@ -40,6 +40,8 @@ func TestFourHostWorkflowDefinesCompleteCandidatePipeline(t *testing.T) {
 		"collect-runtime-packages",
 		"--runtime-package-evidence",
 		"windows-runtime-packages.json",
+		`--pacman "$env:MSYS2_LOCATION\usr\bin\pacman.exe"`,
+		`--cygpath "$env:MSYS2_LOCATION\usr\bin\cygpath.exe"`,
 		"-SimpleMatch 'CACHED'",
 		"grep -F 'CACHED'",
 		"verify-oci",

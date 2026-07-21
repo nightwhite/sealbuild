@@ -281,15 +281,17 @@ jobs:
           pacman -Q | LC_ALL=C sort > "$runner_temp/msys2-packages.txt"
 
       - name: Collect exact MSYS2 runtime package evidence
-        shell: msys2 {0}
+        shell: pwsh
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+          MSYSTEM: CLANG64
         run: |
-          runner_temp=$(cygpath -u "$RUNNER_TEMP")
-          go run ./scripts/runtime/packagewindowshost collect-runtime-packages \
-            --qemu "$runner_temp/qemu-build/qemu-system-x86_64.exe" \
-            --dll-dir /clang64/bin \
-            --pacman /usr/bin/pacman \
-            --cygpath /usr/bin/cygpath \
-            --output "$runner_temp/windows-runtime-packages.json"
+          go run ./scripts/runtime/packagewindowshost collect-runtime-packages `
+            --qemu "$env:RUNNER_TEMP\qemu-build\qemu-system-x86_64.exe" `
+            --dll-dir "$env:MSYS2_LOCATION\clang64\bin" `
+            --pacman "$env:MSYS2_LOCATION\usr\bin\pacman.exe" `
+            --cygpath "$env:MSYS2_LOCATION\usr\bin\cygpath.exe" `
+            --output "$env:RUNNER_TEMP\windows-runtime-packages.json"
 
       - name: Collect licenses and package Windows Host Runtime
         shell: pwsh

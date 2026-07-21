@@ -374,6 +374,8 @@ func TestDarwinQEMUBuildScriptUsesExplicitArchitecture(t *testing.T) {
 		"--disable-sdl",
 		"--disable-curl",
 		"--disable-gnutls",
+		"--disable-gcrypt",
+		"--disable-nettle",
 		"--disable-libusb",
 		"--disable-vnc",
 		"--disable-curses",

@@ -37,7 +37,10 @@ func TestPackageLinuxHostBuildsCompleteArtifact(t *testing.T) {
 		QEMUPath: qemu, QEMUDataDirectory: filepath.Join(workspace, "firmware"),
 		LicenseDirectory: filepath.Join(workspace, "licenses"), LockPath: lockPath, OutputPath: outputPath,
 	}, func(string, []string) (ELFClosure, error) {
-		return ELFClosure{Executable: qemu, Loader: loader, Libraries: []ELFLibrary{{Name: "libglib-2.0.so.0", SourcePath: glib}}}, nil
+		return ELFClosure{Executable: qemu, Loader: loader, Libraries: []ELFLibrary{
+			{Name: "ld-linux-x86-64.so.2", SourcePath: loader},
+			{Name: "libglib-2.0.so.0", SourcePath: glib},
+		}}, nil
 	})
 	if err != nil {
 		t.Fatalf("packageLinuxHost() error = %v", err)

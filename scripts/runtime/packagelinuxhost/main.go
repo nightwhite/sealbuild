@@ -102,7 +102,13 @@ func packageLinuxHost(config linuxPackageConfig, resolve func(string, []string) 
 		return artifact.BuildResult{}, fmt.Errorf("copy Linux ELF loader: %w", err)
 	}
 	for _, library := range closure.Libraries {
-		if library.Name == "ld-linux-x86-64.so.2" || filepath.Base(library.Name) != library.Name {
+		if library.Name == "ld-linux-x86-64.so.2" {
+			if library.SourcePath != closure.Loader {
+				return artifact.BuildResult{}, fmt.Errorf("ELF loader dependency resolves to %s, expected %s", library.SourcePath, closure.Loader)
+			}
+			continue
+		}
+		if filepath.Base(library.Name) != library.Name {
 			return artifact.BuildResult{}, fmt.Errorf("ELF library name is reserved or unsafe: %s", library.Name)
 		}
 		if err := copyRegularFile(library.SourcePath, filepath.Join(payload, "lib", library.Name), 0o644); err != nil {

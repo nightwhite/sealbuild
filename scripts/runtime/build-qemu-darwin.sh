@@ -92,6 +92,8 @@ bootstrap_python="${bootstrap_dir}/bin/python3"
 		--disable-sdl \
 		--disable-curl \
 		--disable-gnutls \
+		--disable-gcrypt \
+		--disable-nettle \
 		--disable-libusb \
 		--disable-vnc \
 		--disable-curses \
