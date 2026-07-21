@@ -1,4 +1,4 @@
-//go:build sealbuild_runtime && ((darwin && arm64) || (windows && amd64))
+//go:build sealbuild_runtime && ((darwin && (arm64 || amd64)) || (linux && amd64) || (windows && amd64))
 
 package runtimeassets
 
