@@ -8,7 +8,7 @@ Darwin ARM 本地 OCI 构建链路已经完成真实验收。当前单文件 CLI
 
 2026-07-20 在 Apple Silicon Mac 上连续完成两组固定 `linux/amd64` 构建。轻量验收 Context 首次 37.52 秒、缓存构建 12.66 秒；真实 `aws-account` Node + Rust + Debian 多阶段 Dockerfile 首次 28 分 16 秒、缓存构建 11.84 秒，18 个步骤命中 `CACHED`。
 
-Windows AMD64 的原生文件锁、TCP shutdown、QEMU Job Object、PE/DLL 闭包打包、平台 Runtime 嵌入和三 Job Actions 候选工作流已经实现。本机已完成 Windows 全模块交叉编译；真实 Windows Actions 和 Windows Home 实机验收尚未运行，因此目前不能把 Windows 标记为正式可用，也不能把本机交叉编译文件作为 Windows 发布产物。Registry Push、Darwin Intel 和 Linux AMD64 仍未完成真实端到端验收。完整证据见 [`docs/runtime-spike-results.md`](docs/runtime-spike-results.md)。
+Windows AMD64 候选已在 GitHub-hosted Windows Server 2025 x64 Runner 完成真实验收。单文件 EXE 自带 TCG-only QEMU Host Runtime 和 Linux AMD64 Guest Runtime；独立产品 Job 在不安装 MSYS2、Docker、WSL 或 QEMU 且第三方 PATH 被清空的环境中连续完成两次标准 Dockerfile 构建，第二次命中缓存，两个 OCI 输出均为 `linux/amd64`。候选 EXE 为 82,245,120 字节，SHA-256 为 `22ea2e33f9784746d53b55d4fb0e278c25f6d6bff0ee836b922f0c01dc92324a`。Windows 10/11 Home 普通用户实机尚未验收，因此当前只能把它标记为 Windows CI 候选，不能宣称家庭版正式支持。Registry Push、Darwin Intel 和 Linux AMD64 仍未完成真实端到端验收。完整证据见 [`docs/runtime-spike-results.md`](docs/runtime-spike-results.md)。
 
 ## 支持范围
 
@@ -67,6 +67,8 @@ CGO_ENABLED=0 go build -tags sealbuild_runtime ./cmd/sealbuild
 ```
 
 Windows 候选验收由 [`.github/workflows/windows-amd64.yml`](.github/workflows/windows-amd64.yml) 执行：Linux Job 构建公共 Guest Runtime，Windows Runtime Job 在 MSYS2 CLANG64 中从固定 QEMU Revision 构建 TCG-only Host Runtime，独立 Windows 产品 Job 生成单文件 EXE 并连续构建两次 Dockerfile。该工作流只上传候选 Artifact，不创建不完整的单平台 GitHub Release。
+
+已通过的 Windows 候选运行：[Windows AMD64 candidate #29813868783](https://github.com/nightwhite/sealbuild/actions/runs/29813868783)，Commit `1f1558c4548a935cc036a5f77de9758aacb42a25`。
 
 ## 项目结构
 

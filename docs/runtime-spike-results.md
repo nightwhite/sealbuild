@@ -4,19 +4,26 @@
 
 里程碑 1 已完成 Runtime 定义、严格版本锁、Buildroot External Tree、Guest 启动配置、mTLS、QEMU TCG Smoke Test 和 Linux GitHub Actions。2026-07-20 又完成新版 fw_cfg/qcow2 Guest、Darwin ARM 单文件 CLI、BuildKit Go Client、本地 OCI 导出、跨独立 VM 缓存复用和正常关机协议的真实验收。
 
-当前可以宣称 Darwin ARM 本地构建 `linux/amd64` OCI Archive 可用。Windows AMD64 产品实现和候选验收工作流已经落地，但真实 Windows Runner 和 Windows Home 尚未执行；Darwin Intel、Linux AMD64 和 Windows AMD64 在各自真实端到端验收前都不宣称支持。
+当前可以宣称 Darwin ARM 本地构建 `linux/amd64` OCI Archive 可用。Windows AMD64 候选也已在 GitHub-hosted Windows Server 2025 x64 Runner 完成真实端到端验收，但 Windows 10/11 Home 普通用户实机尚未执行，因此当前只宣称 Windows CI 候选可构建和可测试，不宣称 Windows Home 正式支持。Darwin Intel 和 Linux AMD64 在各自真实端到端验收前仍不宣称支持。
 
-## Windows AMD64 implementation ready on 2026-07-21
+## Windows AMD64 Actions candidate verified on 2026-07-21
+
+成功运行：[Windows AMD64 candidate #29813868783](https://github.com/nightwhite/sealbuild/actions/runs/29813868783)，Commit `1f1558c4548a935cc036a5f77de9758aacb42a25`。
 
 - Windows 文件锁使用 `LockFileEx` 非阻塞独占锁，竞争映射到现有 `ErrContended`；本机完成 Windows 测试二进制交叉编译，真实行为由 Windows Actions 运行。
 - Windows QEMU 使用第二个 `127.0.0.1` 随机 TCP 端口承载 Guest shutdown acknowledgement，不使用 Unix Socket、WSL、WHPX、Hyper-V 或远程 builder。
 - QEMU 进程以 `CREATE_NO_WINDOW` 启动并立即加入 `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` Job Object；正常路径仍优先等待 Guest 停止 BuildKit、同步并卸载状态盘。
-- Windows Host 打包器通过 Go `debug/pe` 验证 AMD64 PE 并递归解析 DLL Import Table；系统 DLL 使用固定 allowlist，私有 DLL 缺失、同名冲突或非 AMD64 时失败。
+- Windows Host 打包器直接解析 PE Import Directory 并验证 AMD64 PE，递归收集包括 ordinal-only import 在内的 DLL 闭包；系统 DLL 使用固定 allowlist，私有 DLL 缺失、同名冲突或非 AMD64 时失败。打包后的 QEMU 在清空 MSYS2 PATH 后再次执行版本和 TCG-only 校验。
 - Runtime Installer 现在同时校验 Artifact kind 和当前宿主平台，Windows EXE 不会误用 Darwin Host Runtime。
 - `.github/workflows/windows-amd64.yml` 包含 `build-guest-runtime`、`build-windows-runtime` 和 `test-windows-product` 三个隔离 Job；Actions 固定到 Commit SHA，QEMU 固定 v11.0.2 Revision。
 - 产品 Job 不安装 MSYS2、Docker、WSL 或 QEMU。它下载两个 Runtime 后构建单文件 EXE，在包含空格的目录清空第三方 PATH，连续执行两次 Dockerfile 构建，要求第二次出现 `CACHED`，并验证两个 OCI 都是 `linux/amd64`、无 QEMU 残留且 EXE 小于 150 MiB。
-- 2026-07-21 本机证据：`go test ./... -count=1` 通过，`GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build ./...` 通过，Windows tagged CLI 交叉编译大小约 63 MiB。该大小使用本机 Darwin Host embed 资产，仅用于编译和体积下限检查，不是可运行的 Windows 候选产物。
-- 尚缺证据：Windows Actions 首次真实运行结果、实际 Windows Host Runtime/EXE 大小与 SHA-256、两次 OCI 输出、缓存日志、资源清理日志，以及 Windows 10/11 Home 普通用户实机验收。
+- Windows Host Runtime：20,934,031 字节，SHA-256 为 `6e21dd14d4cf17e773d6e31be1f5c9c9c26813b26020ade7d27d94048c622032`；包内 QEMU 为 v11.0.2，accelerator 严格只有 `tcg`。
+- Linux AMD64 Guest Runtime：31,305,931 字节，SHA-256 为 `9e06ab7669c2467503c1da1e7cba9118faf022cb88deb3c77823d9dfca5d4969`。
+- 单文件 `sealbuild-windows-amd64.exe`：82,245,120 字节，约 78.4 MiB，SHA-256 为 `22ea2e33f9784746d53b55d4fb0e278c25f6d6bff0ee836b922f0c01dc92324a`，低于 150 MiB 门禁。
+- 标准 Dockerfile 首次构建完成固定 digest Alpine 拉取、联网 `RUN wget`、`COPY`、多阶段 `FROM scratch` 和 OCI 导出；第二次使用新的 QEMU VM 和同一持久缓存盘，4 个关键步骤显示 `CACHED`。
+- 两次 OCI 检查均为 `linux/amd64`，manifest digest 均为 `sha256:ca9b89b2c4848c74c2e575cdd9b9f69ebf49e47776d50ab106c94fa4b21d6daa`，config digest 均为 `sha256:5ca72b2aa43e7bf8599307e69458935f7bfef0e541f64415d56f81908c6e0cbb`。
+- 产品 Job 的双构建、缓存检查、OCI 检查和 QEMU 进程残留检查全部通过；产品 Job 总耗时 2 分 59 秒，其中两次构建与清理步骤耗时 1 分 2 秒。
+- 尚缺证据：Windows 10/11 Home x64 普通用户实机至少完成一次相同构建。GitHub Actions 的 Windows Server 2025 结果不能替代该门禁。
 
 成功运行：[Runtime spike #29495019169](https://github.com/nightwhite/sealbuild/actions/runs/29495019169)，Commit `98f89cb83a9cac627f3c69b58fa9a654f155c527`。
 
@@ -125,4 +132,4 @@
 - Smoke 与 Linux workflow 已迁移到 qcow2 和 fw_cfg；`actionlint v1.7.7` 通过。
 - 该阶段遗留的新版 Guest 真实验收已于 2026-07-20 完成，结果见上方 Darwin ARM local OCI build 章节。
 
-Darwin ARM 已完成自包含单文件构建验证；其他三个宿主在各自真实端到端验收前仍不得宣称支持。Registry Push 仍不在当前交付范围内。
+Darwin ARM 已完成自包含单文件本地构建验证；Windows AMD64 已完成 Windows Server 2025 CI 候选验收，但仍等待 Windows Home 实机门禁；Darwin Intel 和 Linux AMD64 在各自真实端到端验收前仍不得宣称支持。Registry Push 仍不在当前交付范围内。
