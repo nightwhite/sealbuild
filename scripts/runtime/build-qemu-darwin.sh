@@ -90,6 +90,12 @@ bootstrap_python="${bootstrap_dir}/bin/python3"
 		--disable-cocoa \
 		--disable-gtk \
 		--disable-sdl \
+		--disable-curl \
+		--disable-gnutls \
+		--disable-libusb \
+		--disable-vnc \
+		--disable-curses \
+		--disable-dbus-display \
 		--disable-docs \
 		--disable-guest-agent \
 		--disable-tools \

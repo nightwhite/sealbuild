@@ -14,12 +14,13 @@ import (
 )
 
 type windowsPackageConfig struct {
-	QEMUPath          string
-	DLLDirectories    []string
-	QEMUDataDirectory string
-	LicenseDirectory  string
-	LockPath          string
-	OutputPath        string
+	QEMUPath                   string
+	DLLDirectories             []string
+	QEMUDataDirectory          string
+	LicenseDirectory           string
+	LockPath                   string
+	RuntimePackageEvidencePath string
+	OutputPath                 string
 }
 
 type stringList []string
@@ -41,6 +42,9 @@ func main() {
 }
 
 func run(args []string) error {
+	if len(args) > 0 && args[0] == "collect-runtime-packages" {
+		return runCollectRuntimePackages(args[1:])
+	}
 	flags := flag.NewFlagSet("packagewindowshost", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	var config windowsPackageConfig
@@ -50,6 +54,7 @@ func run(args []string) error {
 	flags.StringVar(&config.QEMUDataDirectory, "qemu-data-dir", "", "QEMU firmware directory")
 	flags.StringVar(&config.LicenseDirectory, "license-dir", "", "collected license directory")
 	flags.StringVar(&config.LockPath, "lock", "", "Windows Host Build Lock path")
+	flags.StringVar(&config.RuntimePackageEvidencePath, "runtime-package-evidence", "", "MSYS2 DLL package evidence path")
 	flags.StringVar(&config.OutputPath, "output", "", "Host Runtime artifact output path")
 	if err := flags.Parse(args); err != nil {
 		return fmt.Errorf("parse packagewindowshost arguments: %w", err)
@@ -63,6 +68,7 @@ func run(args []string) error {
 		{"--qemu-data-dir", config.QEMUDataDirectory},
 		{"--license-dir", config.LicenseDirectory},
 		{"--lock", config.LockPath},
+		{"--runtime-package-evidence", config.RuntimePackageEvidencePath},
 		{"--output", config.OutputPath},
 	} {
 		if required.value == "" {
@@ -91,6 +97,17 @@ func packageWindowsHost(config windowsPackageConfig, resolve func(string, []stri
 	}
 	if len(closure) == 0 {
 		return artifact.BuildResult{}, fmt.Errorf("QEMU PE dependency closure is empty")
+	}
+	evidenceFile, err := os.Open(config.RuntimePackageEvidencePath)
+	if err != nil {
+		return artifact.BuildResult{}, fmt.Errorf("open Windows runtime package evidence: %w", err)
+	}
+	evidence, loadEvidenceErr := loadRuntimePackageEvidence(evidenceFile)
+	if err := errors.Join(loadEvidenceErr, evidenceFile.Close()); err != nil {
+		return artifact.BuildResult{}, err
+	}
+	if err := validateRuntimePackageEvidence(closure, evidence, lock.RuntimePackages); err != nil {
+		return artifact.BuildResult{}, fmt.Errorf("validate Windows runtime packages: %w", err)
 	}
 
 	payload, err := os.MkdirTemp("", "sealbuild-windows-host-payload-*")

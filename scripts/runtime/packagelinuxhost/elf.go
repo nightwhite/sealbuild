@@ -173,7 +173,7 @@ func indexELFLibraries(searchDirectories []string) (map[string]string, []string,
 				continue
 			}
 			if !pathWithinAnyRoot(resolved, roots) {
-				return nil, nil, fmt.Errorf("ELF library %s resolves outside allowed directories", path)
+				continue
 			}
 			if previous, exists := index[entry.Name()]; exists && previous != resolved {
 				return nil, nil, fmt.Errorf("conflicting ELF library %s exists at %s and %s", entry.Name(), previous, resolved)

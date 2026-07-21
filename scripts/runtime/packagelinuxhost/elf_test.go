@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -92,5 +93,35 @@ func TestResolveELFClosureRejectsInvalidDependencies(t *testing.T) {
 				t.Fatalf("resolveELFClosure() error = %q, want substring %q", err, test.wantError)
 			}
 		})
+	}
+}
+
+func TestResolveELFClosureIgnoresUnrelatedSymlinkOutsideSearchDirectories(t *testing.T) {
+	workspace := t.TempDir()
+	libraryRoot := filepath.Join(workspace, "lib")
+	qemu := writeLinuxPackageFile(t, filepath.Join(workspace, "qemu"), "qemu")
+	loader := writeLinuxPackageFile(t, filepath.Join(libraryRoot, "ld-linux-x86-64.so.2"), "loader")
+	libc := writeLinuxPackageFile(t, filepath.Join(libraryRoot, "libc.so.6"), "libc")
+	outside := writeLinuxPackageFile(t, filepath.Join(workspace, "outside", "libLLVM.so.1"), "llvm")
+	if err := os.Symlink(outside, filepath.Join(libraryRoot, "libLLVM-18.so")); err != nil {
+		t.Fatalf("Symlink() error = %v", err)
+	}
+	images := map[string]ELFImage{
+		qemu: {Path: qemu, Interpreter: loader, Needed: []string{"libc.so.6"}},
+		libc: {Path: libc},
+	}
+
+	closure, err := resolveELFClosure(qemu, []string{libraryRoot}, func(path string) (ELFImage, error) {
+		image, exists := images[path]
+		if !exists {
+			return ELFImage{}, fmt.Errorf("unexpected inspect path %s", path)
+		}
+		return image, nil
+	})
+	if err != nil {
+		t.Fatalf("resolveELFClosure() error = %v", err)
+	}
+	if want := []ELFLibrary{{Name: "libc.so.6", SourcePath: libc}}; !slices.Equal(closure.Libraries, want) {
+		t.Fatalf("Libraries = %#v, want %#v", closure.Libraries, want)
 	}
 }

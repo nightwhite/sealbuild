@@ -25,18 +25,23 @@ func TestPackageWindowsHostBuildsVerifiedArtifact(t *testing.T) {
 			Name: "qemu", Version: "v11.0.2", Source: "https://download.qemu.org/qemu-11.0.2.tar.xz",
 			Revision: strings.Repeat("a", 40), SHA256: strings.Repeat("b", 64),
 		}},
-		FirmwareFiles: []string{"bios-256k.bin"},
+		RuntimePackages: []LockedRuntimePackage{{Name: "mingw-glib2", Version: "2.88.2-1"}},
+		FirmwareFiles:   []string{"bios-256k.bin"},
 	}
 	lockBytes, err := json.Marshal(lock)
 	if err != nil {
 		t.Fatalf("Marshal(lock) error = %v", err)
 	}
 	lockPath := writePackageFile(t, filepath.Join(workspace, "build.lock.json"), string(lockBytes))
+	evidencePath := writePackageFile(t, filepath.Join(workspace, "runtime-packages.json"), `{
+		"schemaVersion": 1,
+		"dlls": [{"name":"libglib-2.0-0.dll","package":"mingw-glib2","version":"2.88.2-1"}]
+	}`)
 	outputPath := filepath.Join(workspace, "windows-host.tar.zst")
 
 	result, err := packageWindowsHost(windowsPackageConfig{
 		QEMUPath: qemu, QEMUDataDirectory: firmwareDirectory, LicenseDirectory: licenseDirectory,
-		LockPath: lockPath, OutputPath: outputPath,
+		LockPath: lockPath, RuntimePackageEvidencePath: evidencePath, OutputPath: outputPath,
 	}, func(string, []string) ([]string, error) { return []string{qemu, dll}, nil })
 	if err != nil {
 		t.Fatalf("packageWindowsHost() error = %v", err)

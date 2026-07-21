@@ -280,6 +280,17 @@ jobs:
           runner_temp=$(cygpath -u "$RUNNER_TEMP")
           pacman -Q | LC_ALL=C sort > "$runner_temp/msys2-packages.txt"
 
+      - name: Collect exact MSYS2 runtime package evidence
+        shell: msys2 {0}
+        run: |
+          runner_temp=$(cygpath -u "$RUNNER_TEMP")
+          go run ./scripts/runtime/packagewindowshost collect-runtime-packages \
+            --qemu "$runner_temp/qemu-build/qemu-system-x86_64.exe" \
+            --dll-dir /clang64/bin \
+            --pacman /usr/bin/pacman \
+            --cygpath /usr/bin/cygpath \
+            --output "$runner_temp/windows-runtime-packages.json"
+
       - name: Collect licenses and package Windows Host Runtime
         shell: pwsh
         env:
@@ -297,6 +308,7 @@ jobs:
             --qemu-data-dir "$env:RUNNER_TEMP\qemu-11.0.2\pc-bios" `
             --license-dir $licenses `
             --lock ./runtime/host/windows-amd64/build.lock.json `
+            --runtime-package-evidence "$env:RUNNER_TEMP\windows-runtime-packages.json" `
             --output "$env:RUNNER_TEMP\sealbuild-host-runtime-windows-amd64.tar.zst"
           go run ./scripts/dev/verify-runtime `
             --host "$env:RUNNER_TEMP\sealbuild-host-runtime-windows-amd64.tar.zst"
@@ -327,6 +339,7 @@ jobs:
           path: |
             ${{ runner.temp }}/sealbuild-host-runtime-windows-amd64.tar.zst
             ${{ runner.temp }}/msys2-packages.txt
+            ${{ runner.temp }}/windows-runtime-packages.json
 
   build-host-darwin-arm64:
     needs: quality

@@ -41,6 +41,9 @@ mkdir "${output_dir}"
 		--disable-nitro \
 		--disable-gtk \
 		--disable-sdl \
+		--disable-vnc \
+		--disable-curses \
+		--disable-dbus-display \
 		--disable-docs \
 		--disable-guest-agent \
 		--disable-tools \
