@@ -25,6 +25,7 @@ func TestWindowsWorkflowDefinesIsolatedRuntimeAndProductAcceptance(t *testing.T)
 		"mingw-w64-clang-x86_64-python-wheel",
 		"Verify packaged Windows QEMU",
 		"host-runtime-smoke",
+		"-o $runtimeTar",
 		"$env:SystemRoot\\System32;$env:SystemRoot",
 		"sealbuild-windows-amd64.exe\" build",
 		"first.oci.tar",
@@ -37,6 +38,9 @@ func TestWindowsWorkflowDefinesIsolatedRuntimeAndProductAcceptance(t *testing.T)
 		if !strings.Contains(workflow, required) {
 			t.Errorf("windows-amd64.yml is missing %q", required)
 		}
+	}
+	if strings.Contains(workflow, "--output $runtimeTar") {
+		t.Error("Windows Host Runtime smoke check uses unsupported zstd --output option")
 	}
 	productIndex := strings.Index(workflow, "test-windows-product:")
 	if productIndex < 0 {
