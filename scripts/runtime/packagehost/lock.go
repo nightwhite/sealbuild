@@ -16,7 +16,7 @@ const buildLockSchemaVersion = 1
 var (
 	buildLockSHA256Pattern   = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	buildLockRevisionPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
-	expectedComponentNames   = []string{"qemu", "glib", "pixman", "libslirp", "zstd", "gettext", "gmp", "pcre2"}
+	expectedComponentNames   = []string{"qemu", "glib", "pixman", "libslirp", "zstd", "gettext", "pcre2"}
 )
 
 type BuildLock struct {
