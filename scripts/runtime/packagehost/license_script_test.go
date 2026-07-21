@@ -65,6 +65,59 @@ func TestFetchHostLicensesRejectsChecksumMismatch(t *testing.T) {
 	}
 }
 
+func TestFetchHostLicensesUsesVerifiedExistingArchive(t *testing.T) {
+	workspace := t.TempDir()
+	archivePath := filepath.Join(workspace, "demo.tar")
+	writeLicenseArchive(t, archivePath, map[string]string{
+		"demo-1.0/COPYING":        "license text",
+		"demo-1.0/docs/NOTICE.md": "notice text",
+	})
+	lockPath := writeLicenseScriptLock(t, workspace, archivePath, hashTestFile(t, archivePath))
+	sourceDirectory := filepath.Join(workspace, "sources")
+	if err := os.Mkdir(sourceDirectory, 0o755); err != nil {
+		t.Fatalf("Mkdir(sources) error = %v", err)
+	}
+	if err := os.Rename(archivePath, filepath.Join(sourceDirectory, "demo.archive")); err != nil {
+		t.Fatalf("Rename(existing archive) error = %v", err)
+	}
+	licenseDirectory := filepath.Join(workspace, "licenses")
+
+	command := exec.Command("../fetch-host-licenses.sh", lockPath, sourceDirectory, licenseDirectory)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("fetch-host-licenses.sh error = %v\n%s", err, output)
+	}
+	assertFileContents(t, filepath.Join(licenseDirectory, "demo", "COPYING"), "license text")
+	assertFileContents(t, filepath.Join(licenseDirectory, "demo", "docs", "NOTICE.md"), "notice text")
+}
+
+func TestFetchHostLicensesRejectsUnverifiedExistingArchiveWithoutDownloading(t *testing.T) {
+	workspace := t.TempDir()
+	archivePath := filepath.Join(workspace, "demo.tar")
+	writeLicenseArchive(t, archivePath, map[string]string{"demo-1.0/COPYING": "license text"})
+	lockPath := writeLicenseScriptLock(t, workspace, archivePath, strings.Repeat("0", 64))
+	sourceDirectory := filepath.Join(workspace, "sources")
+	if err := os.Mkdir(sourceDirectory, 0o755); err != nil {
+		t.Fatalf("Mkdir(sources) error = %v", err)
+	}
+	if err := os.Rename(archivePath, filepath.Join(sourceDirectory, "demo.archive")); err != nil {
+		t.Fatalf("Rename(existing archive) error = %v", err)
+	}
+	licenseDirectory := filepath.Join(workspace, "licenses")
+
+	command := exec.Command("../fetch-host-licenses.sh", lockPath, sourceDirectory, licenseDirectory)
+	output, err := command.CombinedOutput()
+	if err == nil {
+		t.Fatal("fetch-host-licenses.sh error = nil, want checksum failure")
+	}
+	if !strings.Contains(string(output), "SHA-256 mismatch for demo") {
+		t.Fatalf("fetch-host-licenses.sh output = %q, want checksum mismatch", output)
+	}
+	if _, err := os.Stat(filepath.Join(licenseDirectory, "demo")); !os.IsNotExist(err) {
+		t.Fatalf("license directory Stat() error = %v, want not exist", err)
+	}
+}
+
 func writeLicenseScriptLock(t *testing.T, workspace, archivePath, checksum string) string {
 	t.Helper()
 	archiveURL := (&url.URL{Scheme: "file", Path: archivePath}).String()

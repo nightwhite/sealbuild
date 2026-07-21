@@ -66,6 +66,10 @@ func TestFourHostWorkflowDefinesCompleteCandidatePipeline(t *testing.T) {
 	if strings.Count(workflow, "QEMU process remains after build") != 4 {
 		t.Errorf("QEMU cleanup gate count = %d, want 4", strings.Count(workflow, "QEMU process remains after build"))
 	}
+	verifiedQEMUArchive := `cp "$RUNNER_TEMP/qemu-11.0.2.tar.xz" "$RUNNER_TEMP/darwin-license-sources/qemu.archive"`
+	if strings.Count(workflow, verifiedQEMUArchive) != 2 {
+		t.Errorf("verified Darwin QEMU archive reuse count = %d, want 2", strings.Count(workflow, verifiedQEMUArchive))
+	}
 	for _, forbidden := range []string{"retry", "ftpmirror.gnu.org", "docker build", "docker run", "remote builder"} {
 		if strings.Contains(strings.ToLower(workflow), forbidden) {
 			t.Errorf("four-host-candidate.yml contains forbidden fragment %q", forbidden)

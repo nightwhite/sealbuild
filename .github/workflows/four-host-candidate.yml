@@ -379,6 +379,8 @@ jobs:
           test -n "$setuptools_wheel"
           ./scripts/runtime/build-qemu-darwin.sh arm64 "$homebrew_root" "$python" "$setuptools_wheel" \
             "$RUNNER_TEMP/qemu-11.0.2" "$RUNNER_TEMP/qemu-build"
+          mkdir "$RUNNER_TEMP/darwin-license-sources"
+          cp "$RUNNER_TEMP/qemu-11.0.2.tar.xz" "$RUNNER_TEMP/darwin-license-sources/qemu.archive"
           ./scripts/runtime/fetch-host-licenses.sh \
             ./runtime/host/darwin-arm64/build.lock.json \
             "$RUNNER_TEMP/darwin-license-sources" \
@@ -448,6 +450,8 @@ jobs:
           test -n "$setuptools_wheel"
           ./scripts/runtime/build-qemu-darwin.sh amd64 "$homebrew_root" "$python" "$setuptools_wheel" \
             "$RUNNER_TEMP/qemu-11.0.2" "$RUNNER_TEMP/qemu-build"
+          mkdir "$RUNNER_TEMP/darwin-license-sources"
+          cp "$RUNNER_TEMP/qemu-11.0.2.tar.xz" "$RUNNER_TEMP/darwin-license-sources/qemu.archive"
           ./scripts/runtime/fetch-host-licenses.sh \
             ./runtime/host/darwin-amd64/build.lock.json \
             "$RUNNER_TEMP/darwin-license-sources" \

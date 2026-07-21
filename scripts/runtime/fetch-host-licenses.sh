@@ -64,19 +64,26 @@ while [ "${component_index}" -lt "${component_count}" ]; do
 
   archive_path="${source_directory}/${component_name}.archive"
   if [ -e "${archive_path}" ]; then
-    echo "source archive already exists: ${archive_path}" >&2
-    exit 1
+    if [ ! -f "${archive_path}" ] || [ -L "${archive_path}" ]; then
+      echo "existing source archive is not a regular file: ${archive_path}" >&2
+      exit 1
+    fi
+    verification_path=${archive_path}
+  else
+    download_path=$(mktemp "${source_directory}/.${component_name}.XXXXXX.tmp")
+    curl --fail --location --silent --show-error --output "${download_path}" "${source_url}"
+    verification_path=${download_path}
   fi
-  download_path=$(mktemp "${source_directory}/.${component_name}.XXXXXX.tmp")
 
-  curl --fail --location --silent --show-error --output "${download_path}" "${source_url}"
-  actual_sha256=$(shasum -a 256 "${download_path}" | awk '{print $1}')
+  actual_sha256=$(shasum -a 256 "${verification_path}" | awk '{print $1}')
   if [ "${actual_sha256}" != "${expected_sha256}" ]; then
     echo "SHA-256 mismatch for ${component_name}" >&2
     exit 1
   fi
-  mv "${download_path}" "${archive_path}"
-  download_path=
+  if [ -n "${download_path}" ]; then
+    mv "${download_path}" "${archive_path}"
+    download_path=
+  fi
 
   listing_path=$(mktemp "${source_directory}/.${component_name}.listing.XXXXXX.tmp")
   top_levels_path=$(mktemp "${source_directory}/.${component_name}.top-levels.XXXXXX.tmp")
