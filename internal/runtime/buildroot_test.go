@@ -389,3 +389,43 @@ func TestDarwinQEMUBuildScriptUsesExplicitArchitecture(t *testing.T) {
 		t.Fatal("build script must not enable HVF")
 	}
 }
+
+func TestLinuxQEMUBuildScriptUsesPinnedTCGOnlyConfiguration(t *testing.T) {
+	buildScript, err := os.ReadFile("../../scripts/runtime/build-qemu-linux-amd64.sh")
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	contents := string(buildScript)
+	for _, requiredFragment := range []string{
+		"e545d8bb9d63e9dd61542b88463183314cff9482",
+		`[ "$(uname -s)" = Linux ]`,
+		`[ "$(uname -m)" = x86_64 ]`,
+		"--target-list=x86_64-softmmu",
+		"--enable-tcg",
+		"--enable-slirp",
+		"--disable-kvm",
+		"--disable-xen",
+		"--disable-gtk",
+		"--disable-sdl",
+		"--disable-docs",
+		"--disable-guest-agent",
+		"--disable-tools",
+		"--disable-user",
+		"--disable-bsd-user",
+		"--disable-linux-user",
+		"--disable-download",
+		"ninja -C \"${output_dir}\" qemu-system-x86_64",
+		"strip --strip-unneeded \"${qemu}\"",
+		"ELF 64-bit LSB pie executable, x86-64",
+		"Accelerators supported in QEMU binary:",
+	} {
+		if !strings.Contains(contents, requiredFragment) {
+			t.Errorf("Linux QEMU build script is missing %q", requiredFragment)
+		}
+	}
+	for _, forbidden := range []string{"--enable-kvm", "--enable-xen", "--enable-hvf", "--enable-whpx"} {
+		if strings.Contains(contents, forbidden) {
+			t.Fatalf("Linux QEMU build script contains forbidden option %q", forbidden)
+		}
+	}
+}

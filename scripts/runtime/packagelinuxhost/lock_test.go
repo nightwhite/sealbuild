@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -42,5 +43,26 @@ func TestLoadLinuxBuildLockValidatesSchema(t *testing.T) {
 				t.Fatalf("loadLinuxBuildLock() error = %q, want substring %q", err, test.wantError)
 			}
 		})
+	}
+}
+
+func TestRepositoryLinuxBuildLockPinsQEMUAndFirmware(t *testing.T) {
+	file, err := os.Open("../../../runtime/host/linux-amd64/build.lock.json")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	lock, loadErr := loadLinuxBuildLock(file)
+	closeErr := file.Close()
+	if loadErr != nil {
+		t.Fatalf("loadLinuxBuildLock() error = %v", loadErr)
+	}
+	if closeErr != nil {
+		t.Fatalf("Close() error = %v", closeErr)
+	}
+	if len(lock.Components) != 1 || lock.Components[0].Name != "qemu" || lock.Components[0].Version != "v11.0.2" {
+		t.Fatalf("Components = %#v, want pinned QEMU", lock.Components)
+	}
+	if len(lock.FirmwareFiles) != 4 {
+		t.Fatalf("FirmwareFiles = %#v, want four files", lock.FirmwareFiles)
 	}
 }

@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "hostPlatform": {
+    "os": "linux",
+    "architecture": "amd64"
+  },
+  "components": [
+    {
+      "name": "qemu",
+      "version": "v11.0.2",
+      "source": "https://download.qemu.org/qemu-11.0.2.tar.xz",
+      "revision": "e545d8bb9d63e9dd61542b88463183314cff9482",
+      "sha256": "3745f6ea88e2e87fe0dc838b2b1d4e0a770bf48e01a1d5a186842a1fff76ccf5"
+    }
+  ],
+  "firmwareFiles": [
+    "bios-256k.bin",
+    "efi-virtio.rom",
+    "kvmvapic.bin",
+    "linuxboot_dma.bin"
+  ]
+}
