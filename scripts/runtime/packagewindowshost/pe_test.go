@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,6 +9,47 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestParsePEImportLibrariesReadsAndDeduplicatesDescriptors(t *testing.T) {
+	descriptors := make([]byte, 60)
+	binary.LittleEndian.PutUint32(descriptors[0:4], 1)
+	binary.LittleEndian.PutUint32(descriptors[12:16], 100)
+	binary.LittleEndian.PutUint32(descriptors[16:20], 2)
+	binary.LittleEndian.PutUint32(descriptors[20:24], 3)
+	binary.LittleEndian.PutUint32(descriptors[32:36], 200)
+	binary.LittleEndian.PutUint32(descriptors[36:40], 4)
+
+	libraries, err := parsePEImportLibraries(descriptors, func(rva uint32) (string, error) {
+		switch rva {
+		case 100:
+			return "libglib-2.0-0.dll", nil
+		case 200:
+			return "LIBGLIB-2.0-0.DLL", nil
+		default:
+			return "", fmt.Errorf("unexpected RVA %d", rva)
+		}
+	})
+	if err != nil {
+		t.Fatalf("parsePEImportLibraries() error = %v", err)
+	}
+	if want := []string{"libglib-2.0-0.dll"}; !reflect.DeepEqual(libraries, want) {
+		t.Fatalf("libraries = %#v, want %#v", libraries, want)
+	}
+}
+
+func TestParsePEImportLibrariesRejectsUnterminatedDirectory(t *testing.T) {
+	descriptors := make([]byte, 20)
+	binary.LittleEndian.PutUint32(descriptors[0:4], 1)
+	binary.LittleEndian.PutUint32(descriptors[12:16], 100)
+	binary.LittleEndian.PutUint32(descriptors[16:20], 2)
+
+	_, err := parsePEImportLibraries(descriptors, func(uint32) (string, error) {
+		return "private.dll", nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "not terminated") {
+		t.Fatalf("parsePEImportLibraries() error = %v, want unterminated directory", err)
+	}
+}
 
 func TestResolvePEClosureCollectsRecursivePrivateDLLs(t *testing.T) {
 	root := t.TempDir()

@@ -164,6 +164,33 @@ jobs:
           go run ./scripts/dev/verify-runtime `
             --host "$env:RUNNER_TEMP\sealbuild-host-runtime-windows-amd64.tar.zst"
 
+      - name: Verify packaged Windows QEMU
+        shell: pwsh
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+        run: |
+          $runtime = "$env:RUNNER_TEMP\host-runtime-smoke"
+          $runtimeTar = "$env:RUNNER_TEMP\host-runtime-smoke.tar"
+          New-Item -ItemType Directory -Path $runtime | Out-Null
+          & "$env:MSYS2_LOCATION\clang64\bin\zstd.exe" --decompress --force `
+            --output $runtimeTar `
+            "$env:RUNNER_TEMP\sealbuild-host-runtime-windows-amd64.tar.zst"
+          if ($LASTEXITCODE -ne 0) { throw "decompress Windows Host Runtime failed" }
+          tar.exe -xf $runtimeTar -C $runtime
+          if ($LASTEXITCODE -ne 0) { throw "extract Windows Host Runtime failed" }
+          $env:Path = "$env:SystemRoot\System32;$env:SystemRoot"
+          $qemu = "$runtime\bin\qemu-system-x86_64.exe"
+          $version = (& $qemu --version) -join "`n"
+          if ($LASTEXITCODE -ne 0) { throw "packaged Windows QEMU version check failed" }
+          if (-not $version.Contains('QEMU emulator version 11.0.2')) {
+            throw "packaged Windows QEMU version is unexpected: $version"
+          }
+          $accelerators = (& $qemu -accel help) -join "`n"
+          if ($LASTEXITCODE -ne 0) { throw "packaged Windows QEMU accelerator check failed" }
+          if ($accelerators -ne "Accelerators supported in QEMU binary:`ntcg") {
+            throw "packaged Windows QEMU accelerator set is not TCG-only: $accelerators"
+          }
+
       - name: Upload Windows Host Runtime
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:

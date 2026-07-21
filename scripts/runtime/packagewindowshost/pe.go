@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"debug/pe"
+	"encoding/binary"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -78,11 +80,94 @@ func inspectPE(path string) (PEFile, error) {
 	if image.FileHeader.Machine != pe.IMAGE_FILE_MACHINE_AMD64 {
 		return PEFile{}, fmt.Errorf("machine is %#x, expected AMD64", image.FileHeader.Machine)
 	}
-	imports, err := image.ImportedLibraries()
+	imports, err := importedLibraries(image)
 	if err != nil {
 		return PEFile{}, fmt.Errorf("read import table: %w", err)
 	}
 	return PEFile{Path: path, Imports: imports}, nil
+}
+
+func importedLibraries(image *pe.File) ([]string, error) {
+	var directory pe.DataDirectory
+	switch optionalHeader := image.OptionalHeader.(type) {
+	case *pe.OptionalHeader32:
+		if optionalHeader.NumberOfRvaAndSizes <= pe.IMAGE_DIRECTORY_ENTRY_IMPORT {
+			return nil, nil
+		}
+		directory = optionalHeader.DataDirectory[pe.IMAGE_DIRECTORY_ENTRY_IMPORT]
+	case *pe.OptionalHeader64:
+		if optionalHeader.NumberOfRvaAndSizes <= pe.IMAGE_DIRECTORY_ENTRY_IMPORT {
+			return nil, nil
+		}
+		directory = optionalHeader.DataDirectory[pe.IMAGE_DIRECTORY_ENTRY_IMPORT]
+	default:
+		return nil, fmt.Errorf("optional header has unsupported type %T", image.OptionalHeader)
+	}
+	if directory.VirtualAddress == 0 || directory.Size == 0 {
+		return nil, nil
+	}
+	descriptors, err := peDataAtRVA(image, directory.VirtualAddress)
+	if err != nil {
+		return nil, fmt.Errorf("read import descriptors: %w", err)
+	}
+	if directory.Size > uint32(len(descriptors)) {
+		return nil, fmt.Errorf("import directory size %d exceeds section data %d", directory.Size, len(descriptors))
+	}
+	return parsePEImportLibraries(descriptors[:directory.Size], func(rva uint32) (string, error) {
+		data, err := peDataAtRVA(image, rva)
+		if err != nil {
+			return "", err
+		}
+		terminator := bytes.IndexByte(data, 0)
+		if terminator < 1 {
+			return "", fmt.Errorf("DLL name at RVA %#x is empty or unterminated", rva)
+		}
+		if terminator > 4096 {
+			return "", fmt.Errorf("DLL name at RVA %#x exceeds 4096 bytes", rva)
+		}
+		return string(data[:terminator]), nil
+	})
+}
+
+func parsePEImportLibraries(descriptors []byte, readName func(uint32) (string, error)) ([]string, error) {
+	const descriptorSize = 20
+	libraries := make([]string, 0)
+	seen := make(map[string]struct{})
+	for offset := 0; offset+descriptorSize <= len(descriptors); offset += descriptorSize {
+		descriptor := descriptors[offset : offset+descriptorSize]
+		if bytes.Equal(descriptor, make([]byte, descriptorSize)) {
+			return libraries, nil
+		}
+		nameRVA := binary.LittleEndian.Uint32(descriptor[12:16])
+		if nameRVA == 0 {
+			return nil, fmt.Errorf("import descriptor at offset %d has no DLL name", offset)
+		}
+		name, err := readName(nameRVA)
+		if err != nil {
+			return nil, fmt.Errorf("read DLL name at RVA %#x: %w", nameRVA, err)
+		}
+		key := strings.ToLower(name)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		libraries = append(libraries, name)
+	}
+	return nil, fmt.Errorf("import directory is not terminated")
+}
+
+func peDataAtRVA(image *pe.File, rva uint32) ([]byte, error) {
+	for _, section := range image.Sections {
+		if rva < section.VirtualAddress || rva-section.VirtualAddress >= section.Size {
+			continue
+		}
+		data, err := section.Data()
+		if err != nil {
+			return nil, err
+		}
+		return data[rva-section.VirtualAddress:], nil
+	}
+	return nil, fmt.Errorf("RVA %#x is outside file-backed sections", rva)
 }
 
 func indexDLLs(searchDirectories []string) (map[string]string, error) {
