@@ -74,7 +74,7 @@ jobs:
       - name: Check out Sealbuild
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
 
-      - name: Download and verify shared Runtime sources
+      - name: Download and verify shared QEMU source
         shell: bash
         run: |
           set -euo pipefail
@@ -83,12 +83,6 @@ jobs:
           arm_components=$(jq -S -c '.components' ./runtime/host/darwin-arm64/build.lock.json)
           amd64_components=$(jq -S -c '.components' ./runtime/host/darwin-amd64/build.lock.json)
           test "$arm_components" = "$amd64_components"
-          mkdir "$RUNNER_TEMP/darwin-license-sources"
-          cp "$RUNNER_TEMP/qemu-11.0.2.tar.xz" "$RUNNER_TEMP/darwin-license-sources/qemu.archive"
-          ./scripts/runtime/fetch-host-licenses.sh \
-            ./runtime/host/darwin-arm64/build.lock.json \
-            "$RUNNER_TEMP/darwin-license-sources" \
-            "$RUNNER_TEMP/darwin-licenses"
 
       - name: Upload shared QEMU source
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -98,14 +92,6 @@ jobs:
           retention-days: 14
           compression-level: 0
           path: ${{ runner.temp }}/qemu-11.0.2.tar.xz
-
-      - name: Upload shared Darwin Host licenses
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: sealbuild-darwin-host-licenses
-          if-no-files-found: error
-          retention-days: 14
-          path: ${{ runner.temp }}/darwin-licenses
 
   build-guest-runtime:
     needs: prepare-runtime-sources
@@ -422,12 +408,6 @@ jobs:
           name: sealbuild-qemu-source
           path: ${{ runner.temp }}
 
-      - name: Download shared Darwin Host licenses
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
-        with:
-          name: sealbuild-darwin-host-licenses
-          path: ${{ runner.temp }}/darwin-licenses
-
       - name: Verify and unpack QEMU source archive
         shell: bash
         run: |
@@ -450,8 +430,8 @@ jobs:
             --homebrew-root "$homebrew_root" \
             --qemu "$RUNNER_TEMP/qemu-build/qemu-system-x86_64" \
             --qemu-data-dir "$RUNNER_TEMP/qemu-11.0.2/pc-bios" \
-            --qemu-license-dir "$RUNNER_TEMP/darwin-licenses/qemu" \
-            --dependency-license-dir "$RUNNER_TEMP/darwin-licenses" \
+            --qemu-license-dir "$RUNNER_TEMP/qemu-11.0.2" \
+            --dependency-license-dir ./runtime/host/darwin-licenses \
             --lock ./runtime/host/darwin-arm64/build.lock.json \
             --output "$RUNNER_TEMP/sealbuild-host-runtime-darwin-arm64.tar.zst"
           go run ./scripts/dev/verify-runtime \
@@ -498,12 +478,6 @@ jobs:
           name: sealbuild-qemu-source
           path: ${{ runner.temp }}
 
-      - name: Download shared Darwin Host licenses
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
-        with:
-          name: sealbuild-darwin-host-licenses
-          path: ${{ runner.temp }}/darwin-licenses
-
       - name: Verify and unpack QEMU source archive
         shell: bash
         run: |
@@ -526,8 +500,8 @@ jobs:
             --homebrew-root "$homebrew_root" \
             --qemu "$RUNNER_TEMP/qemu-build/qemu-system-x86_64" \
             --qemu-data-dir "$RUNNER_TEMP/qemu-11.0.2/pc-bios" \
-            --qemu-license-dir "$RUNNER_TEMP/darwin-licenses/qemu" \
-            --dependency-license-dir "$RUNNER_TEMP/darwin-licenses" \
+            --qemu-license-dir "$RUNNER_TEMP/qemu-11.0.2" \
+            --dependency-license-dir ./runtime/host/darwin-licenses \
             --lock ./runtime/host/darwin-amd64/build.lock.json \
             --output "$RUNNER_TEMP/sealbuild-host-runtime-darwin-amd64.tar.zst"
           go run ./scripts/dev/verify-runtime \

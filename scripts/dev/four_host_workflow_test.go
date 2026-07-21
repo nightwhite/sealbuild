@@ -67,21 +67,23 @@ func TestFourHostWorkflowDefinesCompleteCandidatePipeline(t *testing.T) {
 	if strings.Count(workflow, "QEMU process remains after build") != 4 {
 		t.Errorf("QEMU cleanup gate count = %d, want 4", strings.Count(workflow, "QEMU process remains after build"))
 	}
-	verifiedQEMUArchive := `cp "$RUNNER_TEMP/qemu-11.0.2.tar.xz" "$RUNNER_TEMP/darwin-license-sources/qemu.archive"`
-	if strings.Count(workflow, verifiedQEMUArchive) != 1 {
-		t.Errorf("verified Darwin QEMU archive reuse count = %d, want 1", strings.Count(workflow, verifiedQEMUArchive))
-	}
 	if count := strings.Count(workflow, `curl --fail --output "$RUNNER_TEMP/qemu-11.0.2.tar.xz" "$QEMU_URL"`); count != 1 {
 		t.Errorf("official QEMU source download count = %d, want 1", count)
 	}
 	if count := strings.Count(workflow, "name: sealbuild-qemu-source"); count != 6 {
 		t.Errorf("shared QEMU source artifact count = %d, want 6", count)
 	}
-	if count := strings.Count(workflow, "name: sealbuild-darwin-host-licenses"); count != 3 {
-		t.Errorf("shared Darwin license artifact count = %d, want 3", count)
-	}
 	if count := strings.Count(workflow, "needs: prepare-runtime-sources"); count != 5 {
 		t.Errorf("Runtime source dependency count = %d, want 5", count)
+	}
+	if count := strings.Count(workflow, `--qemu-license-dir "$RUNNER_TEMP/qemu-11.0.2"`); count != 2 {
+		t.Errorf("verified QEMU license directory count = %d, want 2", count)
+	}
+	if count := strings.Count(workflow, "--dependency-license-dir ./runtime/host/darwin-licenses"); count != 2 {
+		t.Errorf("vendored Darwin dependency license directory count = %d, want 2", count)
+	}
+	if strings.Contains(workflow, "fetch-host-licenses.sh") {
+		t.Error("four-host-candidate.yml must not download Darwin dependency licenses")
 	}
 	for _, forbidden := range []string{"retry", "ftpmirror.gnu.org", "docker build", "docker run", "remote builder"} {
 		if strings.Contains(strings.ToLower(workflow), forbidden) {

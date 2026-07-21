@@ -1,7 +1,10 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -91,9 +94,49 @@ func copyLockedLicenses(lock BuildLock, qemuLicenseDirectory, dependencyLicenseD
 			if err := copyRegularFile(sourcePath, destinationPath, 0o644); err != nil {
 				return fmt.Errorf("copy %s license %s: %w", component.Name, licensePath, err)
 			}
+			actualSHA256, err := regularFileSHA256(destinationPath)
+			if err != nil {
+				return fmt.Errorf("hash %s license %s: %w", component.Name, licensePath, err)
+			}
+			expectedSHA256 := component.LicenseFileSHA256[licensePath]
+			if actualSHA256 != expectedSHA256 {
+				return fmt.Errorf(
+					"%s license %s SHA-256 mismatch: got %s, expected %s",
+					component.Name,
+					licensePath,
+					actualSHA256,
+					expectedSHA256,
+				)
+			}
 		}
 	}
 	return nil
+}
+
+func regularFileSHA256(filePath string) (returnSHA256 string, returnErr error) {
+	info, err := os.Lstat(filePath)
+	if err != nil {
+		return "", fmt.Errorf("inspect file: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("file must be regular")
+	}
+
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", fmt.Errorf("open file: %w", err)
+	}
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil && returnErr == nil {
+			returnErr = fmt.Errorf("close file: %w", closeErr)
+		}
+	}()
+
+	digest := sha256.New()
+	if _, err := io.Copy(digest, file); err != nil {
+		return "", fmt.Errorf("read file: %w", err)
+	}
+	return hex.EncodeToString(digest.Sum(nil)), nil
 }
 
 func matchesBottleVersion(installed, locked string) bool {

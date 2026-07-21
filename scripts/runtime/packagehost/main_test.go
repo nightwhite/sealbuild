@@ -91,24 +91,27 @@ func TestPackageHostBuildsArtifactFromLockedClosure(t *testing.T) {
 		writeTestFile(t, library.SourcePath, "mach-o", 0o755)
 	}
 
+	qemuLicenseDirectory := filepath.Join(workspace, "qemu-licenses")
+	dependencyLicenseDirectory := filepath.Join(workspace, "dependency-licenses")
+	for componentIndex := range lock.Components {
+		component := &lock.Components[componentIndex]
+		licenseRoot := filepath.Join(dependencyLicenseDirectory, component.Name)
+		if component.Name == "qemu" {
+			licenseRoot = qemuLicenseDirectory
+		}
+		for _, licensePath := range component.LicenseFiles {
+			contents := component.Name + ":" + licensePath
+			writeLicenseFile(t, licenseRoot, licensePath, contents)
+			component.LicenseFileSHA256[licensePath] = licenseChecksum(contents)
+		}
+	}
+
 	lockPath := filepath.Join(workspace, "build.lock.json")
 	lockBytes, err := json.Marshal(lock)
 	if err != nil {
 		t.Fatalf("Marshal() error = %v", err)
 	}
 	writeTestFile(t, lockPath, string(lockBytes), 0o644)
-
-	qemuLicenseDirectory := filepath.Join(workspace, "qemu-licenses")
-	dependencyLicenseDirectory := filepath.Join(workspace, "dependency-licenses")
-	for _, component := range lock.Components {
-		licenseRoot := filepath.Join(dependencyLicenseDirectory, component.Name)
-		if component.Name == "qemu" {
-			licenseRoot = qemuLicenseDirectory
-		}
-		for _, licensePath := range component.LicenseFiles {
-			writeLicenseFile(t, licenseRoot, licensePath, component.Name+":"+licensePath)
-		}
-	}
 
 	outputPath := filepath.Join(workspace, "host-runtime.tar.zst")
 	runner := newPackageRunner(t, qemuPath, graph)

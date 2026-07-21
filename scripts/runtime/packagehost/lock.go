@@ -26,13 +26,14 @@ type BuildLock struct {
 }
 
 type LockedComponent struct {
-	Name         string   `json:"name"`
-	Version      string   `json:"version"`
-	Source       string   `json:"source"`
-	Revision     string   `json:"revision,omitempty"`
-	SHA256       string   `json:"sha256"`
-	License      string   `json:"license"`
-	LicenseFiles []string `json:"licenseFiles"`
+	Name              string            `json:"name"`
+	Version           string            `json:"version"`
+	Source            string            `json:"source"`
+	Revision          string            `json:"revision,omitempty"`
+	SHA256            string            `json:"sha256"`
+	License           string            `json:"license"`
+	LicenseFiles      []string          `json:"licenseFiles"`
+	LicenseFileSHA256 map[string]string `json:"licenseFileSHA256"`
 }
 
 func LoadBuildLock(reader io.Reader) (BuildLock, error) {
@@ -101,6 +102,13 @@ func (lock BuildLock) Validate() error {
 		if len(component.LicenseFiles) == 0 {
 			return fmt.Errorf("component %s licenseFiles must not be empty", component.Name)
 		}
+		if len(component.LicenseFileSHA256) != len(component.LicenseFiles) {
+			return fmt.Errorf(
+				"component %s licenseFileSHA256 must contain exactly %d entries",
+				component.Name,
+				len(component.LicenseFiles),
+			)
+		}
 
 		licensePaths := make(map[string]struct{}, len(component.LicenseFiles))
 		for _, licensePath := range component.LicenseFiles {
@@ -111,6 +119,17 @@ func (lock BuildLock) Validate() error {
 				return fmt.Errorf("component %s license file %s is duplicated", component.Name, licensePath)
 			}
 			licensePaths[licensePath] = struct{}{}
+			licenseSHA256, exists := component.LicenseFileSHA256[licensePath]
+			if !exists {
+				return fmt.Errorf("component %s license file %s sha256 is required", component.Name, licensePath)
+			}
+			if !buildLockSHA256Pattern.MatchString(licenseSHA256) {
+				return fmt.Errorf(
+					"component %s license file %s sha256 must be 64 lowercase hexadecimal characters",
+					component.Name,
+					licensePath,
+				)
+			}
 		}
 	}
 	return nil

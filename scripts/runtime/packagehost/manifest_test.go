@@ -104,6 +104,10 @@ func TestCopyLockedLicensesCopiesExactDeclaredFiles(t *testing.T) {
 		SHA256:       strings.Repeat("b", 64),
 		License:      "LGPL-2.1-or-later",
 		LicenseFiles: []string{"COPYING", "docs/COPYING.extra"},
+		LicenseFileSHA256: map[string]string{
+			"COPYING":            licenseChecksum("glib-lgpl"),
+			"docs/COPYING.extra": licenseChecksum("glib-extra"),
+		},
 	}
 	qemuLicenses := t.TempDir()
 	dependencyLicenses := t.TempDir()
@@ -140,6 +144,23 @@ func TestCopyLockedLicensesCopiesExactDeclaredFiles(t *testing.T) {
 		if info.Mode().Perm() != 0o644 {
 			t.Errorf("%s mode = %#o, want 0644", relativePath, info.Mode().Perm())
 		}
+	}
+}
+
+func TestCopyLockedLicensesRejectsContentChecksumMismatch(t *testing.T) {
+	lock := validBuildLock()
+	lock.Components = lock.Components[:1]
+	qemuLicenses := t.TempDir()
+	writeLicenseFile(t, qemuLicenses, "COPYING", "modified")
+	writeLicenseFile(t, qemuLicenses, "COPYING.LIB", "qemu-lgpl")
+	writeLicenseFile(t, qemuLicenses, "LICENSE", "qemu-license-map")
+
+	err := copyLockedLicenses(lock, qemuLicenses, t.TempDir(), t.TempDir())
+	if err == nil {
+		t.Fatal("copyLockedLicenses() error = nil, want checksum mismatch")
+	}
+	if !strings.Contains(err.Error(), "qemu license COPYING SHA-256 mismatch") {
+		t.Fatalf("copyLockedLicenses() error = %q, want checksum mismatch", err)
 	}
 }
 

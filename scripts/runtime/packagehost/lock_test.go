@@ -1,7 +1,10 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -92,8 +95,40 @@ func TestBuildLockRejectsInvalidInput(t *testing.T) {
 			name: "duplicate license path",
 			mutate: func(lock *BuildLock) {
 				lock.Components[0].LicenseFiles = []string{"COPYING", "COPYING"}
+				lock.Components[0].LicenseFileSHA256 = map[string]string{
+					"COPYING": licenseChecksum("qemu-gpl"),
+					"LICENSE": licenseChecksum("qemu-license-map"),
+				}
 			},
 			wantError: "component qemu license file COPYING is duplicated",
+		},
+		{
+			name: "missing license file checksums",
+			mutate: func(lock *BuildLock) {
+				lock.Components[0].LicenseFileSHA256 = nil
+			},
+			wantError: "component qemu licenseFileSHA256 must contain exactly 3 entries",
+		},
+		{
+			name: "missing license file checksum",
+			mutate: func(lock *BuildLock) {
+				delete(lock.Components[0].LicenseFileSHA256, "COPYING")
+			},
+			wantError: "component qemu licenseFileSHA256 must contain exactly 3 entries",
+		},
+		{
+			name: "invalid license file checksum",
+			mutate: func(lock *BuildLock) {
+				lock.Components[0].LicenseFileSHA256["COPYING"] = "ABC"
+			},
+			wantError: "component qemu license file COPYING sha256 must be 64 lowercase hexadecimal characters",
+		},
+		{
+			name: "extra license file checksum",
+			mutate: func(lock *BuildLock) {
+				lock.Components[0].LicenseFileSHA256["NOTICE"] = strings.Repeat("b", 64)
+			},
+			wantError: "component qemu licenseFileSHA256 must contain exactly 3 entries",
 		},
 	}
 
@@ -225,6 +260,44 @@ func TestRepositoryDarwinBuildLocksPinSameComponents(t *testing.T) {
 	}
 }
 
+func TestRepositoryDarwinDependencyLicensesMatchBuildLock(t *testing.T) {
+	file, err := os.Open("../../../runtime/host/darwin-arm64/build.lock.json")
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	lock, loadErr := LoadBuildLock(file)
+	closeErr := file.Close()
+	if loadErr != nil {
+		t.Fatalf("LoadBuildLock() error = %v", loadErr)
+	}
+	if closeErr != nil {
+		t.Fatalf("Close() error = %v", closeErr)
+	}
+
+	licenseRoot := "../../../runtime/host/darwin-licenses"
+	for _, component := range lock.Components {
+		if component.Name == "qemu" {
+			continue
+		}
+		for _, licensePath := range component.LicenseFiles {
+			filePath := filepath.Join(licenseRoot, component.Name, filepath.FromSlash(licensePath))
+			actualSHA256, err := regularFileSHA256(filePath)
+			if err != nil {
+				t.Fatalf("regularFileSHA256(%s) error = %v", filePath, err)
+			}
+			if actualSHA256 != component.LicenseFileSHA256[licensePath] {
+				t.Errorf(
+					"%s license %s SHA-256 = %s, want %s",
+					component.Name,
+					licensePath,
+					actualSHA256,
+					component.LicenseFileSHA256[licensePath],
+				)
+			}
+		}
+	}
+}
+
 func validBuildLock() BuildLock {
 	components := []LockedComponent{
 		{
@@ -235,16 +308,22 @@ func validBuildLock() BuildLock {
 			SHA256:       "3745f6ea88e2e87fe0dc838b2b1d4e0a770bf48e01a1d5a186842a1fff76ccf5",
 			License:      "GPL-2.0-only AND LGPL-2.1-only",
 			LicenseFiles: []string{"COPYING", "COPYING.LIB", "LICENSE"},
+			LicenseFileSHA256: map[string]string{
+				"COPYING":     licenseChecksum("qemu-gpl"),
+				"COPYING.LIB": licenseChecksum("qemu-lgpl"),
+				"LICENSE":     licenseChecksum("qemu-license-map"),
+			},
 		},
 	}
 	for _, name := range []string{"glib", "pixman", "libslirp", "zstd", "gettext", "pcre2"} {
 		components = append(components, LockedComponent{
-			Name:         name,
-			Version:      "1.0.0",
-			Source:       "https://example.invalid/" + name,
-			SHA256:       strings.Repeat("a", 64),
-			License:      "MIT",
-			LicenseFiles: []string{"LICENSE"},
+			Name:              name,
+			Version:           "1.0.0",
+			Source:            "https://example.invalid/" + name,
+			SHA256:            strings.Repeat("a", 64),
+			License:           "MIT",
+			LicenseFiles:      []string{"LICENSE"},
+			LicenseFileSHA256: map[string]string{"LICENSE": strings.Repeat("b", 64)},
 		})
 	}
 	return BuildLock{
@@ -252,4 +331,9 @@ func validBuildLock() BuildLock {
 		HostPlatform:  runtimepkg.Platform{OS: "darwin", Architecture: "arm64"},
 		Components:    components,
 	}
+}
+
+func licenseChecksum(contents string) string {
+	digest := sha256.Sum256([]byte(contents))
+	return hex.EncodeToString(digest[:])
 }
