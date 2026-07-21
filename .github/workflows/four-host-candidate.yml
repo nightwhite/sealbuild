@@ -179,10 +179,10 @@ jobs:
           cp "$RUNNER_TEMP/qemu-11.0.2/COPYING" "$licenses/qemu/COPYING"
           cp "$RUNNER_TEMP/qemu-11.0.2/COPYING.LIB" "$licenses/qemu/COPYING.LIB"
           cp "$RUNNER_TEMP/qemu-11.0.2/LICENSE" "$licenses/qemu/LICENSE"
-          for package in libc6 libglib2.0-0t64 libpixman-1-0 libslirp0 libzstd1; do
+          while IFS=$'\t' read -r package version; do
             mkdir -p "$licenses/$package"
             cp "/usr/share/doc/$package/copyright" "$licenses/$package/copyright"
-          done
+          done < "$RUNNER_TEMP/dpkg-runtime-packages.txt"
           go run ./scripts/runtime/packagelinuxhost \
             --qemu "$RUNNER_TEMP/qemu-build/qemu-system-x86_64" \
             --library-dir /lib64 \
@@ -191,6 +191,7 @@ jobs:
             --qemu-data-dir "$RUNNER_TEMP/qemu-11.0.2/pc-bios" \
             --license-dir "$licenses" \
             --lock ./runtime/host/linux-amd64/build.lock.json \
+            --runtime-package-evidence "$RUNNER_TEMP/dpkg-runtime-packages.txt" \
             --output "$RUNNER_TEMP/sealbuild-host-runtime-linux-amd64.tar.zst"
           go run ./scripts/dev/verify-runtime \
             --host "$RUNNER_TEMP/sealbuild-host-runtime-linux-amd64.tar.zst"

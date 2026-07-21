@@ -22,7 +22,8 @@ func TestPackageLinuxHostBuildsCompleteArtifact(t *testing.T) {
 		Components: []runtimepkg.Component{{
 			Name: "qemu", Version: "v11.0.2", Source: "https://download.qemu.org/qemu-11.0.2.tar.xz", SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		}},
-		FirmwareFiles: []string{"bios-256k.bin"},
+		RuntimePackages: []LockedRuntimePackage{{Name: "libglib2.0-0t64", Version: "2.80.0-1"}},
+		FirmwareFiles:   []string{"bios-256k.bin"},
 	}
 	lockBytes, err := json.Marshal(lock)
 	if err != nil {
@@ -32,10 +33,15 @@ func TestPackageLinuxHostBuildsCompleteArtifact(t *testing.T) {
 	if err := os.WriteFile(lockPath, lockBytes, 0o644); err != nil {
 		t.Fatalf("WriteFile(lock) error = %v", err)
 	}
+	evidencePath := filepath.Join(workspace, "dpkg-runtime-packages.txt")
+	if err := os.WriteFile(evidencePath, []byte("libglib2.0-0t64\t2.80.0-1\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(evidence) error = %v", err)
+	}
 	outputPath := filepath.Join(workspace, "sealbuild-host-runtime-linux-amd64.tar.zst")
 	result, err := packageLinuxHost(linuxPackageConfig{
 		QEMUPath: qemu, QEMUDataDirectory: filepath.Join(workspace, "firmware"),
-		LicenseDirectory: filepath.Join(workspace, "licenses"), LockPath: lockPath, OutputPath: outputPath,
+		LicenseDirectory: filepath.Join(workspace, "licenses"), LockPath: lockPath,
+		RuntimePackageEvidencePath: evidencePath, OutputPath: outputPath,
 	}, func(string, []string) (ELFClosure, error) {
 		return ELFClosure{Executable: qemu, Loader: loader, Libraries: []ELFLibrary{
 			{Name: "ld-linux-x86-64.so.2", SourcePath: loader},

@@ -14,12 +14,13 @@ import (
 )
 
 type linuxPackageConfig struct {
-	QEMUPath           string
-	LibraryDirectories []string
-	QEMUDataDirectory  string
-	LicenseDirectory   string
-	LockPath           string
-	OutputPath         string
+	QEMUPath                   string
+	LibraryDirectories         []string
+	QEMUDataDirectory          string
+	LicenseDirectory           string
+	LockPath                   string
+	RuntimePackageEvidencePath string
+	OutputPath                 string
 }
 
 type stringList []string
@@ -50,6 +51,7 @@ func run(args []string) error {
 	flags.StringVar(&config.QEMUDataDirectory, "qemu-data-dir", "", "QEMU firmware directory")
 	flags.StringVar(&config.LicenseDirectory, "license-dir", "", "collected license directory")
 	flags.StringVar(&config.LockPath, "lock", "", "Linux Host Build Lock path")
+	flags.StringVar(&config.RuntimePackageEvidencePath, "runtime-package-evidence", "", "dpkg runtime package evidence path")
 	flags.StringVar(&config.OutputPath, "output", "", "Host Runtime artifact output path")
 	if err := flags.Parse(args); err != nil {
 		return fmt.Errorf("parse packagelinuxhost arguments: %w", err)
@@ -63,6 +65,7 @@ func run(args []string) error {
 		{"--qemu-data-dir", config.QEMUDataDirectory},
 		{"--license-dir", config.LicenseDirectory},
 		{"--lock", config.LockPath},
+		{"--runtime-package-evidence", config.RuntimePackageEvidencePath},
 		{"--output", config.OutputPath},
 	} {
 		if required.value == "" {
@@ -83,6 +86,17 @@ func packageLinuxHost(config linuxPackageConfig, resolve func(string, []string) 
 	}
 	lock, loadErr := loadLinuxBuildLock(lockFile)
 	if err := errors.Join(loadErr, lockFile.Close()); err != nil {
+		return artifact.BuildResult{}, err
+	}
+	evidenceFile, err := os.Open(config.RuntimePackageEvidencePath)
+	if err != nil {
+		return artifact.BuildResult{}, fmt.Errorf("open Linux runtime package evidence: %w", err)
+	}
+	actualPackages, loadEvidenceErr := loadLinuxRuntimePackageEvidence(evidenceFile)
+	if err := errors.Join(loadEvidenceErr, evidenceFile.Close()); err != nil {
+		return artifact.BuildResult{}, err
+	}
+	if err := validateLinuxRuntimePackageEvidence(actualPackages, lock.RuntimePackages); err != nil {
 		return artifact.BuildResult{}, err
 	}
 	closure, err := resolve(config.QEMUPath, config.LibraryDirectories)

@@ -98,6 +98,7 @@ bootstrap_python="${bootstrap_dir}/bin/python3"
 		--disable-vnc \
 		--disable-curses \
 		--disable-dbus-display \
+		--disable-png \
 		--disable-docs \
 		--disable-guest-agent \
 		--disable-tools \

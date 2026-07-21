@@ -380,6 +380,7 @@ func TestDarwinQEMUBuildScriptUsesExplicitArchitecture(t *testing.T) {
 		"--disable-vnc",
 		"--disable-curses",
 		"--disable-dbus-display",
+		"--disable-png",
 		"--disable-docs",
 		"--disable-guest-agent",
 		"--disable-tools",
