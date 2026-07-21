@@ -27,6 +27,33 @@ type DependencyGraph struct {
 	Libraries  []MachOFile
 }
 
+func ValidateMachOArchitecture(ctx context.Context, runner Runner, machOPath, architecture string) error {
+	expected, err := darwinArchitectureName(architecture)
+	if err != nil {
+		return err
+	}
+	output, err := runner.Run(ctx, "lipo", "-archs", machOPath)
+	if err != nil {
+		return fmt.Errorf("inspect Mach-O architecture %s: %w", machOPath, err)
+	}
+	actual := strings.Join(strings.Fields(string(output)), " ")
+	if actual != expected {
+		return fmt.Errorf("Mach-O %s architectures are %s, expected %s", machOPath, actual, expected)
+	}
+	return nil
+}
+
+func darwinArchitectureName(architecture string) (string, error) {
+	switch architecture {
+	case "arm64":
+		return "arm64", nil
+	case "amd64":
+		return "x86_64", nil
+	default:
+		return "", fmt.Errorf("Darwin Host architecture must be arm64 or amd64")
+	}
+}
+
 func ResolveDependencies(ctx context.Context, runner Runner, executable, libraryRoot string) (DependencyGraph, error) {
 	resolvedExecutable, err := filepath.EvalSymlinks(executable)
 	if err != nil {

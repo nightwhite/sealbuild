@@ -60,8 +60,9 @@ func (lock BuildLock) Validate() error {
 	if lock.SchemaVersion != buildLockSchemaVersion {
 		return fmt.Errorf("schemaVersion must be %d", buildLockSchemaVersion)
 	}
-	if lock.HostPlatform.OS != "darwin" || lock.HostPlatform.Architecture != "arm64" {
-		return fmt.Errorf("hostPlatform must be darwin/arm64")
+	if lock.HostPlatform.OS != "darwin" ||
+		(lock.HostPlatform.Architecture != "arm64" && lock.HostPlatform.Architecture != "amd64") {
+		return fmt.Errorf("hostPlatform must be darwin/arm64 or darwin/amd64")
 	}
 	if len(lock.Components) != len(expectedComponentNames) {
 		return fmt.Errorf("components must contain exactly %d entries", len(expectedComponentNames))

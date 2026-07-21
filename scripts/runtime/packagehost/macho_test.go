@@ -151,6 +151,40 @@ func TestIsSystemDependency(t *testing.T) {
 	}
 }
 
+func TestValidateMachOArchitecture(t *testing.T) {
+	tests := []struct {
+		name         string
+		architecture string
+		output       string
+		wantError    string
+	}{
+		{name: "ARM64", architecture: "arm64", output: "arm64\n"},
+		{name: "AMD64", architecture: "amd64", output: "x86_64\n"},
+		{name: "wrong architecture", architecture: "amd64", output: "arm64\n", wantError: "architectures are arm64, expected x86_64"},
+		{name: "Universal rejected", architecture: "arm64", output: "x86_64 arm64\n", wantError: "architectures are x86_64 arm64, expected arm64"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path := "/tmp/qemu-system-x86_64"
+			runner := &fakeRunner{outputs: map[string][]byte{
+				commandKey("lipo", "-archs", path): []byte(test.output),
+			}}
+
+			err := ValidateMachOArchitecture(t.Context(), runner, path, test.architecture)
+			if test.wantError == "" {
+				if err != nil {
+					t.Fatalf("ValidateMachOArchitecture() error = %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), test.wantError) {
+				t.Fatalf("ValidateMachOArchitecture() error = %q, want substring %q", err, test.wantError)
+			}
+		})
+	}
+}
+
 func TestRelocateMachOCopiesRewritesSignsAndVerifies(t *testing.T) {
 	sourceRoot := t.TempDir()
 	qemuSource := createEmptyFile(t, sourceRoot, "qemu-system-x86_64")

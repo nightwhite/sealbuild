@@ -12,8 +12,6 @@ import (
 	"github.com/labring/sealbuild/scripts/runtime/artifact"
 )
 
-const darwinARMHomebrewRoot = "/opt/homebrew"
-
 var qemuFirmwareFiles = []string{
 	"bios-256k.bin",
 	"efi-virtio.rom",
@@ -22,6 +20,7 @@ var qemuFirmwareFiles = []string{
 }
 
 type hostPackageConfig struct {
+	HostArchitecture           string
 	QEMUPath                   string
 	QEMUDataDirectory          string
 	LockPath                   string
@@ -41,7 +40,9 @@ func main() {
 func run(ctx context.Context, args []string, runner Runner) error {
 	flags := flag.NewFlagSet("packagehost", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	config := hostPackageConfig{HomebrewRoot: darwinARMHomebrewRoot}
+	var config hostPackageConfig
+	flags.StringVar(&config.HostArchitecture, "host-architecture", "", "Darwin Host architecture")
+	flags.StringVar(&config.HomebrewRoot, "homebrew-root", "", "Homebrew root")
 	flags.StringVar(&config.QEMUPath, "qemu", "", "QEMU executable path")
 	flags.StringVar(&config.QEMUDataDirectory, "qemu-data-dir", "", "QEMU firmware directory")
 	flags.StringVar(&config.LockPath, "lock", "", "Host Build Lock path")
@@ -64,14 +65,35 @@ func run(ctx context.Context, args []string, runner Runner) error {
 		{"--qemu-license-dir", config.QEMULicenseDirectory},
 		{"--dependency-license-dir", config.DependencyLicenseDirectory},
 		{"--output", config.OutputPath},
+		{"--host-architecture", config.HostArchitecture},
+		{"--homebrew-root", config.HomebrewRoot},
 	} {
 		if required.value == "" {
 			return fmt.Errorf("%s is required", required.name)
 		}
 	}
+	if err := validateDarwinTarget(config.HostArchitecture, config.HomebrewRoot); err != nil {
+		return err
+	}
 
 	_, err := packageHost(ctx, runner, config)
 	return err
+}
+
+func validateDarwinTarget(architecture, homebrewRoot string) error {
+	switch architecture {
+	case "arm64":
+		if homebrewRoot != "/opt/homebrew" {
+			return fmt.Errorf("darwin/arm64 requires Homebrew root /opt/homebrew")
+		}
+	case "amd64":
+		if homebrewRoot != "/usr/local" {
+			return fmt.Errorf("darwin/amd64 requires Homebrew root /usr/local")
+		}
+	default:
+		return fmt.Errorf("Darwin Host architecture must be arm64 or amd64")
+	}
+	return nil
 }
 
 func packageHost(ctx context.Context, runner Runner, config hostPackageConfig) (result artifact.BuildResult, returnErr error) {
@@ -87,6 +109,16 @@ func packageHost(ctx context.Context, runner Runner, config hostPackageConfig) (
 	if closeErr != nil {
 		return artifact.BuildResult{}, fmt.Errorf("close Host Build Lock: %w", closeErr)
 	}
+	if lock.HostPlatform.Architecture != config.HostArchitecture {
+		return artifact.BuildResult{}, fmt.Errorf(
+			"Host Build Lock architecture is %s, expected %s",
+			lock.HostPlatform.Architecture,
+			config.HostArchitecture,
+		)
+	}
+	if err := ValidateMachOArchitecture(ctx, runner, config.QEMUPath, config.HostArchitecture); err != nil {
+		return artifact.BuildResult{}, fmt.Errorf("validate QEMU architecture: %w", err)
+	}
 
 	resolvedHomebrewRoot, err := filepath.EvalSymlinks(config.HomebrewRoot)
 	if err != nil {
@@ -95,6 +127,11 @@ func packageHost(ctx context.Context, runner Runner, config hostPackageConfig) (
 	graph, err := ResolveDependencies(ctx, runner, config.QEMUPath, resolvedHomebrewRoot)
 	if err != nil {
 		return artifact.BuildResult{}, err
+	}
+	for _, library := range graph.Libraries {
+		if err := ValidateMachOArchitecture(ctx, runner, library.SourcePath, config.HostArchitecture); err != nil {
+			return artifact.BuildResult{}, fmt.Errorf("validate dependency architecture: %w", err)
+		}
 	}
 	if err := validateDependencyComponents(graph, resolvedHomebrewRoot, lock); err != nil {
 		return artifact.BuildResult{}, err

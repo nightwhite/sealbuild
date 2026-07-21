@@ -20,6 +20,63 @@ func TestRunRejectsMissingRequiredOption(t *testing.T) {
 	}
 }
 
+func TestRunRequiresExplicitDarwinTarget(t *testing.T) {
+	baseArguments := []string{
+		"--qemu", "/tmp/qemu",
+		"--lock", "/tmp/lock",
+		"--qemu-data-dir", "/tmp/firmware",
+		"--qemu-license-dir", "/tmp/qemu-license",
+		"--dependency-license-dir", "/tmp/dependency-license",
+		"--output", "/tmp/output",
+	}
+	tests := []struct {
+		name      string
+		arguments []string
+		wantError string
+	}{
+		{
+			name:      "missing architecture",
+			arguments: append(append([]string(nil), baseArguments...), "--homebrew-root", "/opt/homebrew"),
+			wantError: "--host-architecture is required",
+		},
+		{
+			name:      "missing Homebrew root",
+			arguments: append(append([]string(nil), baseArguments...), "--host-architecture", "arm64"),
+			wantError: "--homebrew-root is required",
+		},
+		{
+			name: "ARM with Intel Homebrew",
+			arguments: append(append([]string(nil), baseArguments...),
+				"--host-architecture", "arm64", "--homebrew-root", "/usr/local"),
+			wantError: "darwin/arm64 requires Homebrew root /opt/homebrew",
+		},
+		{
+			name: "Intel with ARM Homebrew",
+			arguments: append(append([]string(nil), baseArguments...),
+				"--host-architecture", "amd64", "--homebrew-root", "/opt/homebrew"),
+			wantError: "darwin/amd64 requires Homebrew root /usr/local",
+		},
+		{
+			name: "unsupported architecture",
+			arguments: append(append([]string(nil), baseArguments...),
+				"--host-architecture", "ppc64", "--homebrew-root", "/usr/local"),
+			wantError: "Darwin Host architecture must be arm64 or amd64",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := run(t.Context(), test.arguments, &packageRunner{})
+			if err == nil {
+				t.Fatal("run() error = nil, want error")
+			}
+			if !strings.Contains(err.Error(), test.wantError) {
+				t.Fatalf("run() error = %q, want substring %q", err, test.wantError)
+			}
+		})
+	}
+}
+
 func TestPackageHostBuildsArtifactFromLockedClosure(t *testing.T) {
 	lock := dependencyBuildLock()
 	workspace := t.TempDir()
@@ -56,6 +113,7 @@ func TestPackageHostBuildsArtifactFromLockedClosure(t *testing.T) {
 	outputPath := filepath.Join(workspace, "host-runtime.tar.zst")
 	runner := newPackageRunner(t, qemuPath, graph)
 	result, err := packageHost(t.Context(), runner, hostPackageConfig{
+		HostArchitecture:           "arm64",
 		QEMUPath:                   qemuPath,
 		QEMUDataDirectory:          qemuDataDirectory,
 		LockPath:                   lockPath,
@@ -86,8 +144,9 @@ func TestPackageHostBuildsArtifactFromLockedClosure(t *testing.T) {
 }
 
 type packageRunner struct {
-	qemuPath  string
-	libraries map[string]MachOFile
+	qemuPath     string
+	libraries    map[string]MachOFile
+	architecture string
 }
 
 func newPackageRunner(t *testing.T, qemuPath string, graph DependencyGraph) *packageRunner {
@@ -105,10 +164,16 @@ func newPackageRunner(t *testing.T, qemuPath string, graph DependencyGraph) *pac
 	if err != nil {
 		t.Fatalf("resolve test QEMU path: %v", err)
 	}
-	return &packageRunner{qemuPath: resolvedQEMUPath, libraries: libraries}
+	return &packageRunner{qemuPath: resolvedQEMUPath, libraries: libraries, architecture: "arm64"}
 }
 
 func (runner *packageRunner) Run(_ context.Context, name string, args ...string) ([]byte, error) {
+	if name == "lipo" {
+		if len(args) != 2 || args[0] != "-archs" {
+			return nil, fmt.Errorf("unexpected lipo arguments: %q", args)
+		}
+		return []byte(runner.architecture + "\n"), nil
+	}
 	if name != "otool" {
 		return nil, nil
 	}

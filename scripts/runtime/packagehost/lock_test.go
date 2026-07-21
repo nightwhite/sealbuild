@@ -9,11 +9,16 @@ import (
 	runtimepkg "github.com/labring/sealbuild/internal/runtime"
 )
 
-func TestBuildLockAcceptsPinnedDarwinARMInputs(t *testing.T) {
-	lock := validBuildLock()
+func TestBuildLockAcceptsPinnedDarwinHosts(t *testing.T) {
+	for _, architecture := range []string{"arm64", "amd64"} {
+		t.Run(architecture, func(t *testing.T) {
+			lock := validBuildLock()
+			lock.HostPlatform.Architecture = architecture
 
-	if err := lock.Validate(); err != nil {
-		t.Fatalf("Validate() error = %v", err)
+			if err := lock.Validate(); err != nil {
+				t.Fatalf("Validate() error = %v", err)
+			}
+		})
 	}
 }
 
@@ -30,8 +35,8 @@ func TestBuildLockRejectsInvalidInput(t *testing.T) {
 		},
 		{
 			name:      "wrong host platform",
-			mutate:    func(lock *BuildLock) { lock.HostPlatform.Architecture = "amd64" },
-			wantError: "hostPlatform must be darwin/arm64",
+			mutate:    func(lock *BuildLock) { lock.HostPlatform.OS = "linux" },
+			wantError: "hostPlatform must be darwin/arm64 or darwin/amd64",
 		},
 		{
 			name: "wrong component order",
