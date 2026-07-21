@@ -54,6 +54,7 @@ func TestRequestGuestShutdownRejectsUnexpectedAcknowledgement(t *testing.T) {
 	go func() {
 		connection, acceptErr := listener.Accept()
 		if acceptErr == nil {
+			_, _ = bufio.NewReader(connection).ReadString('\n')
 			_, _ = connection.Write([]byte("invalid\n"))
 			_ = connection.Close()
 		}

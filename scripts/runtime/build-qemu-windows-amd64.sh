@@ -48,7 +48,7 @@ cd "${output_dir}"
 ninja qemu-system-x86_64.exe
 
 ./qemu-system-x86_64.exe --version | grep -F 'QEMU emulator version 11.0.2'
-accelerators=$(./qemu-system-x86_64.exe -accel help)
+accelerators=$(./qemu-system-x86_64.exe -accel help | tr -d '\r')
 expected_accelerators='Accelerators supported in QEMU binary:
 tcg'
 if [ "${accelerators}" != "${expected_accelerators}" ]; then
