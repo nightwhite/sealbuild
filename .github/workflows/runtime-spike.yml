@@ -59,11 +59,14 @@ jobs:
 
       - name: Build pinned QEMU
         run: |
-          git init "$RUNNER_TEMP/qemu"
-          git -C "$RUNNER_TEMP/qemu" remote add origin https://gitlab.com/qemu-project/qemu.git
-          git -C "$RUNNER_TEMP/qemu" fetch --depth 1 origin e545d8bb9d63e9dd61542b88463183314cff9482
-          git -C "$RUNNER_TEMP/qemu" checkout --detach FETCH_HEAD
-          cd "$RUNNER_TEMP/qemu"
+          curl --fail --location \
+            --output "$RUNNER_TEMP/qemu-11.0.2.tar.xz" \
+            https://download.qemu.org/qemu-11.0.2.tar.xz
+          printf '%s  %s\n' \
+            3745f6ea88e2e87fe0dc838b2b1d4e0a770bf48e01a1d5a186842a1fff76ccf5 \
+            "$RUNNER_TEMP/qemu-11.0.2.tar.xz" | sha256sum --check --status
+          tar -xJf "$RUNNER_TEMP/qemu-11.0.2.tar.xz" -C "$RUNNER_TEMP"
+          cd "$RUNNER_TEMP/qemu-11.0.2"
           ./configure \
             --target-list=x86_64-softmmu \
             --enable-slirp \
@@ -78,7 +81,7 @@ jobs:
           ./scripts/runtime/build-guest.sh \
             "$RUNNER_TEMP/buildroot" \
             "$RUNNER_TEMP/runtime-spike" \
-            "$RUNNER_TEMP/qemu/build/qemu-img"
+            "$RUNNER_TEMP/qemu-11.0.2/build/qemu-img"
 
       - name: Generate smoke certificates
         run: |
@@ -98,7 +101,7 @@ jobs:
       - name: Run QEMU TCG smoke test
         run: |
           ./scripts/runtime/smoke-guest.sh \
-            "$RUNNER_TEMP/qemu/build/qemu-system-x86_64" \
+            "$RUNNER_TEMP/qemu-11.0.2/build/qemu-system-x86_64" \
             "$RUNNER_TEMP/bin/buildctl" \
             "$RUNNER_TEMP/runtime-spike/artifact" \
             "$RUNNER_TEMP/runtime-spike/tls" \

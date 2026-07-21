@@ -330,7 +330,7 @@ func TestSmokeGuestUsesFWCfgAndQCOW2(t *testing.T) {
 	workflowContents := string(workflow)
 	for _, requiredFragment := range []string{
 		"ninja -C build qemu-system-x86_64 qemu-img",
-		`"$RUNNER_TEMP/qemu/build/qemu-img"`,
+		`"$RUNNER_TEMP/qemu-11.0.2/build/qemu-img"`,
 		"generate-spike-certs.sh",
 		`"$RUNNER_TEMP/runtime-spike/tls"`,
 		"artifact/manifest.json",

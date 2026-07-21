@@ -18,7 +18,7 @@
 - `internal/vm/shutdown_*.go`：Darwin Unix Socket 与 Windows loopback TCP shutdown 客户端。
 - `internal/vm/config_*.go`：平台专用 shutdown chardev 参数和 QEMU compound path 编码。
 - `scripts/runtime/packagewindowshost/`：PE Import Table 闭包、系统 DLL allowlist、固件和许可证打包。
-- `scripts/runtime/build-qemu-windows-amd64.ps1`：固定 MSYS2 CLANG64 QEMU 构建入口。
+- `scripts/runtime/build-qemu-windows-amd64.sh`：固定 MSYS2 CLANG64 QEMU 构建入口。
 - `runtime/host/windows-amd64/build.lock.json`：Windows QEMU 和依赖版本、来源、SHA-256、许可证锁。
 - `internal/runtimeassets/bundle_embedded_*.go`：按宿主 build tags 嵌入对应 Host Runtime和公共 Guest Runtime。
 - `scripts/dev/prepare-runtime-assets.go`：跨平台验证并原子准备 embed 资产。
@@ -273,7 +273,7 @@ CLI 参数：
 ## 任务 6：固定 Windows QEMU 构建入口
 
 **文件：**
-- 创建：`scripts/runtime/build-qemu-windows-amd64.ps1`
+- 创建：`scripts/runtime/build-qemu-windows-amd64.sh`
 - 创建：`scripts/runtime/build-qemu-windows-amd64_test.go`
 - 修改：`runtime/host/windows-amd64/build.lock.json`
 
@@ -293,7 +293,7 @@ CLI 参数：
 
 ```bash
 go test ./scripts/runtime -run TestWindowsQEMUBuildScript -count=1
-pwsh -NoProfile -Command '$null = [scriptblock]::Create((Get-Content -Raw scripts/runtime/build-qemu-windows-amd64.ps1))'
+sh -n scripts/runtime/build-qemu-windows-amd64.sh
 ```
 
 预期：静态测试与 PowerShell 语法通过。

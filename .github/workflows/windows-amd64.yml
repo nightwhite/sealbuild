@@ -46,27 +46,30 @@ jobs:
             libelf-dev libglib2.0-dev libpixman-1-dev libslirp-dev ninja-build \
             openssl perl pkg-config python3 rsync tar unzip wget zstd
 
-      - name: Check out pinned Buildroot and QEMU
+      - name: Check out pinned Buildroot and unpack QEMU
         run: |
           git init "$RUNNER_TEMP/buildroot"
           git -C "$RUNNER_TEMP/buildroot" remote add origin https://github.com/buildroot/buildroot.git
           git -C "$RUNNER_TEMP/buildroot" fetch --depth 1 origin cb857ba4c87a93e5265a9e4a3f32071abf39e14a
           git -C "$RUNNER_TEMP/buildroot" checkout --detach FETCH_HEAD
-          git init "$RUNNER_TEMP/qemu"
-          git -C "$RUNNER_TEMP/qemu" remote add origin https://gitlab.com/qemu-project/qemu.git
-          git -C "$RUNNER_TEMP/qemu" fetch --depth 1 origin e545d8bb9d63e9dd61542b88463183314cff9482
-          git -C "$RUNNER_TEMP/qemu" checkout --detach FETCH_HEAD
+          curl --fail --location \
+            --output "$RUNNER_TEMP/qemu-11.0.2.tar.xz" \
+            https://download.qemu.org/qemu-11.0.2.tar.xz
+          printf '%s  %s\n' \
+            3745f6ea88e2e87fe0dc838b2b1d4e0a770bf48e01a1d5a186842a1fff76ccf5 \
+            "$RUNNER_TEMP/qemu-11.0.2.tar.xz" | sha256sum --check --status
+          tar -xJf "$RUNNER_TEMP/qemu-11.0.2.tar.xz" -C "$RUNNER_TEMP"
 
       - name: Build qemu-img and Guest Runtime
         run: |
-          cd "$RUNNER_TEMP/qemu"
+          cd "$RUNNER_TEMP/qemu-11.0.2"
           ./configure --target-list=x86_64-softmmu --disable-docs --disable-guest-agent --disable-user --disable-download
           ninja -C build qemu-img
           cd "$GITHUB_WORKSPACE"
           ./scripts/runtime/build-guest.sh \
             "$RUNNER_TEMP/buildroot" \
             "$RUNNER_TEMP/guest-runtime" \
-            "$RUNNER_TEMP/qemu/build/qemu-img"
+            "$RUNNER_TEMP/qemu-11.0.2/build/qemu-img"
           go run ./scripts/dev/verify-runtime \
             --guest "$RUNNER_TEMP/guest-runtime/sealbuild-guest-runtime.tar.zst"
 
@@ -112,23 +115,25 @@ jobs:
             mingw-w64-clang-x86_64-toolchain
             mingw-w64-clang-x86_64-zstd
 
-      - name: Check out pinned QEMU
+      - name: Download verified QEMU source archive
         shell: pwsh
         run: |
-          git init "$env:RUNNER_TEMP\qemu"
-          git -C "$env:RUNNER_TEMP\qemu" remote add origin https://gitlab.com/qemu-project/qemu.git
-          git -C "$env:RUNNER_TEMP\qemu" fetch --depth 1 origin e545d8bb9d63e9dd61542b88463183314cff9482
-          git -C "$env:RUNNER_TEMP\qemu" checkout --detach FETCH_HEAD
+          $archive = "$env:RUNNER_TEMP\qemu-11.0.2.tar.xz"
+          curl.exe --fail --location --output $archive https://download.qemu.org/qemu-11.0.2.tar.xz
+          if ($LASTEXITCODE -ne 0) { throw "download QEMU source failed" }
+          $actual = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLower()
+          $expected = '3745f6ea88e2e87fe0dc838b2b1d4e0a770bf48e01a1d5a186842a1fff76ccf5'
+          if ($actual -ne $expected) { throw "QEMU source SHA-256 is $actual, expected $expected" }
+          tar.exe -xJf $archive -C $env:RUNNER_TEMP
+          if ($LASTEXITCODE -ne 0) { throw "extract QEMU source failed" }
 
       - name: Build TCG-only Windows QEMU
-        shell: pwsh
-        env:
-          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+        shell: msys2 {0}
         run: |
-          ./scripts/runtime/build-qemu-windows-amd64.ps1 `
-            -Msys2Root $env:MSYS2_LOCATION `
-            -QemuSource "$env:RUNNER_TEMP\qemu" `
-            -OutputDirectory "$env:RUNNER_TEMP\qemu-build"
+          runner_temp=$(cygpath -u "$RUNNER_TEMP")
+          ./scripts/runtime/build-qemu-windows-amd64.sh \
+            "$runner_temp/qemu-11.0.2" \
+            "$runner_temp/qemu-build"
 
       - name: Record exact MSYS2 packages
         shell: msys2 {0}
@@ -143,14 +148,14 @@ jobs:
         run: |
           $licenses = "$env:RUNNER_TEMP\windows-host-licenses"
           New-Item -ItemType Directory -Path "$licenses\qemu" | Out-Null
-          Copy-Item "$env:RUNNER_TEMP\qemu\COPYING" "$licenses\qemu\COPYING"
-          Copy-Item "$env:RUNNER_TEMP\qemu\COPYING.LIB" "$licenses\qemu\COPYING.LIB"
-          Copy-Item "$env:RUNNER_TEMP\qemu\LICENSE" "$licenses\qemu\LICENSE"
+          Copy-Item "$env:RUNNER_TEMP\qemu-11.0.2\COPYING" "$licenses\qemu\COPYING"
+          Copy-Item "$env:RUNNER_TEMP\qemu-11.0.2\COPYING.LIB" "$licenses\qemu\COPYING.LIB"
+          Copy-Item "$env:RUNNER_TEMP\qemu-11.0.2\LICENSE" "$licenses\qemu\LICENSE"
           Copy-Item "$env:MSYS2_LOCATION\clang64\share\licenses" "$licenses\msys2" -Recurse
           go run ./scripts/runtime/packagewindowshost `
             --qemu "$env:RUNNER_TEMP\qemu-build\qemu-system-x86_64.exe" `
             --dll-dir "$env:MSYS2_LOCATION\clang64\bin" `
-            --qemu-data-dir "$env:RUNNER_TEMP\qemu\pc-bios" `
+            --qemu-data-dir "$env:RUNNER_TEMP\qemu-11.0.2\pc-bios" `
             --license-dir $licenses `
             --lock ./runtime/host/windows-amd64/build.lock.json `
             --output "$env:RUNNER_TEMP\sealbuild-host-runtime-windows-amd64.tar.zst"
