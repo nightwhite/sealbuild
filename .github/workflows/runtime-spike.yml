@@ -39,7 +39,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
-            bc build-essential ca-certificates cpio curl e2fsprogs file git \
+            bc build-essential ca-certificates cpio curl e2fsprogs file git jq \
             libelf-dev libglib2.0-dev libpixman-1-dev libslirp-dev ninja-build \
             openssl perl pkg-config python3 rsync tar unzip wget zstd
 
@@ -69,16 +69,21 @@ jobs:
             --enable-slirp \
             --disable-docs \
             --disable-guest-agent \
-            --disable-tools \
             --disable-user
-          ninja -C build qemu-system-x86_64
+          ninja -C build qemu-system-x86_64 qemu-img
           build/qemu-system-x86_64 --version | grep -F 'version 11.0.2'
 
       - name: Build Guest Runtime
         run: |
           ./scripts/runtime/build-guest.sh \
             "$RUNNER_TEMP/buildroot" \
-            "$RUNNER_TEMP/runtime-spike"
+            "$RUNNER_TEMP/runtime-spike" \
+            "$RUNNER_TEMP/qemu/build/qemu-img"
+
+      - name: Generate smoke certificates
+        run: |
+          ./scripts/runtime/generate-spike-certs.sh \
+            "$RUNNER_TEMP/runtime-spike/tls"
 
       - name: Install pinned buildctl
         run: |
@@ -96,6 +101,7 @@ jobs:
             "$RUNNER_TEMP/qemu/build/qemu-system-x86_64" \
             "$RUNNER_TEMP/bin/buildctl" \
             "$RUNNER_TEMP/runtime-spike/artifact" \
+            "$RUNNER_TEMP/runtime-spike/tls" \
             "$RUNNER_TEMP/smoke-output" \
             12345
 
@@ -108,6 +114,7 @@ jobs:
           retention-days: 14
           path: |
             ${{ runner.temp }}/runtime-spike/sealbuild-guest-runtime.tar.zst
+            ${{ runner.temp }}/runtime-spike/artifact/manifest.json
             ${{ runner.temp }}/runtime-spike/artifact/checksums.txt
             ${{ runner.temp }}/smoke-output/serial.log
             ${{ runner.temp }}/smoke-output/worker.json

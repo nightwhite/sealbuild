@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sealbuild Web Demo</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f4f6f8;
+      color: #18212b;
+    }
+    body {
+      display: grid;
+      min-height: 100vh;
+      margin: 0;
+      place-items: center;
+    }
+    main {
+      width: min(560px, calc(100% - 48px));
+      border-top: 4px solid #12715b;
+      background: #fff;
+      box-shadow: 0 16px 48px rgb(24 33 43 / 12%);
+      padding: 40px;
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: 32px;
+      letter-spacing: 0;
+    }
+    p {
+      margin: 0;
+      color: #52606d;
+      line-height: 1.7;
+    }
+    code {
+      color: #0f5948;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Sealbuild</h1>
+    <p>这个页面来自 Sealbuild 构建的 <code>linux/amd64</code> OCI 镜像。</p>
+  </main>
+</body>
+</html>

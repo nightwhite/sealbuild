@@ -3,12 +3,15 @@ root = "/var/lib/buildkit"
 [grpc]
   address = ["tcp://0.0.0.0:1234"]
   [grpc.tls]
-    cert = "/etc/buildkit/tls/server.crt"
-    key = "/etc/buildkit/tls/server.key"
-    ca = "/etc/buildkit/tls/ca.crt"
+    cert = "/var/lib/buildkit/runtime/tls/server.crt"
+    key = "/var/lib/buildkit/runtime/tls/server.key"
+    ca = "/var/lib/buildkit/runtime/tls/ca.crt"
 
 [cdi]
   disabled = true
+
+[registry."docker.io"]
+  mirrors = ["docker.1ms.run"]
 
 [worker.oci]
   enabled = true

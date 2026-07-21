@@ -6,6 +6,9 @@ console=/dev/console
 log_file=/run/buildkitd.log
 state_device=/dev/vdb
 state_dir=/var/lib/buildkit
+runtime_dir="${state_dir}/runtime"
+tls_dir="${runtime_dir}/tls"
+shutdown_device=/dev/vport1p1
 
 fail() {
 	if [ -r "${log_file}" ]; then
@@ -15,17 +18,42 @@ fail() {
 	exit 1
 }
 
+install_fw_cfg() {
+	name=$1
+	destination=$2
+	mode=$3
+	source="/sys/firmware/qemu_fw_cfg/by_name/${name}/raw"
+	[ -r "${source}" ] || fail fw-cfg
+	install -m "${mode}" "${source}" "${destination}" || fail fw-cfg-copy
+}
+
 [ -r /proc/self/mountinfo ] || fail proc
 [ -d /sys/fs/cgroup ] || fail cgroup2
 [ -d /sys/class/net/eth0 ] || fail network-device
 [ -b "${state_device}" ] || fail state-device
-[ -r /etc/buildkit/tls/ca.crt ] || fail tls-ca
-[ -r /etc/buildkit/tls/server.crt ] || fail tls-cert
-[ -r /etc/buildkit/tls/server.key ] || fail tls-key
 
 mkdir -p "${state_dir}"
 grep -qs " ${state_dir} " /proc/mounts || mount -t ext4 "${state_device}" "${state_dir}" || fail state-mount
 mkdir -p "${state_dir}/cni"
+mkdir -p "${tls_dir}"
+chmod 0700 "${runtime_dir}" "${tls_dir}" || fail runtime-permissions
+install_fw_cfg opt/sealbuild/tls/ca.crt "${tls_dir}/ca.crt" 0644
+install_fw_cfg opt/sealbuild/tls/server.crt "${tls_dir}/server.crt" 0644
+install_fw_cfg opt/sealbuild/tls/server.key "${tls_dir}/server.key" 0600
+
+proxy_source=/sys/firmware/qemu_fw_cfg/by_name/opt/sealbuild/proxy/url/raw
+if [ -e "${proxy_source}" ]; then
+	[ -r "${proxy_source}" ] || fail proxy-fw-cfg
+	proxy_url=$(cat "${proxy_source}") || fail proxy-fw-cfg-read
+	[ -n "${proxy_url}" ] || fail proxy-fw-cfg-empty
+	export HTTP_PROXY="${proxy_url}"
+	export HTTPS_PROXY="${proxy_url}"
+	export http_proxy="${proxy_url}"
+	export https_proxy="${proxy_url}"
+	export NO_PROXY="docker.1ms.run,.1ms.run"
+	export no_proxy="${NO_PROXY}"
+fi
+
 mount --bind "${state_dir}/cni" /var/lib/cni || fail cni-state-mount
 
 ip route show default | grep -q '^default ' || fail network-route
@@ -33,6 +61,37 @@ ip route show default | grep -q '^default ' || fail network-route
 printf 'SEALBUILD_RUNTIME_STARTING\n' >"${console}"
 /usr/bin/buildkitd --config /etc/buildkit/buildkitd.toml >"${log_file}" 2>&1 &
 buildkitd_pid=$!
+
+shutdown_runtime() {
+	for _attempt in $(seq 1 30); do
+		[ -c "${shutdown_device}" ] && break
+		sleep 1
+	done
+	[ -c "${shutdown_device}" ] || fail shutdown-device
+	command=
+	while ! IFS= read -r command <"${shutdown_device}"; do
+		sleep 1
+	done
+	[ "${command}" = shutdown ] || fail shutdown-command
+	kill "${buildkitd_pid}" || fail buildkitd-stop
+	for _attempt in $(seq 1 30); do
+		if ! kill -0 "${buildkitd_pid}" 2>/dev/null; then
+			break
+		fi
+		sleep 1
+	done
+	if kill -0 "${buildkitd_pid}" 2>/dev/null; then
+		fail buildkitd-stop-timeout
+	fi
+	sync
+	umount /var/lib/cni || fail cni-state-unmount
+	umount "${state_dir}" || fail state-unmount
+	sync
+	printf 'SEALBUILD_RUNTIME_SHUTDOWN\n' >"${shutdown_device}"
+	poweroff -f
+}
+
+shutdown_runtime &
 
 for _attempt in $(seq 1 120); do
 	if ! kill -0 "${buildkitd_pid}" 2>/dev/null; then

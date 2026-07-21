@@ -39,11 +39,22 @@
       "sha256": "b98f74a0f8522f0a83867178729c1aa70f2158f90c45a2ca8fa791db1c76b303"
     },
     {
-      "name": "qemu",
-      "version": "v11.0.2",
-      "source": "https://gitlab.com/qemu-project/qemu.git",
-      "revision": "e545d8bb9d63e9dd61542b88463183314cff9482",
-      "sha256": "6f5dc8b9705dd58f87e31ccbb5cdd340df6d7de84fb92c293d8587d25965a10c"
+      "name": "buildkit-source",
+      "version": "v0.31.1",
+      "source": "https://github.com/moby/buildkit/archive/refs/tags/v0.31.1.tar.gz",
+      "sha256": "b733b9243017cb2b8f9cb1a6bd5125a2bde5680d4063412dbc159402bffbaf1e"
+    },
+    {
+      "name": "runc-source",
+      "version": "v1.5.1",
+      "source": "https://github.com/opencontainers/runc/archive/refs/tags/v1.5.1.tar.gz",
+      "sha256": "32286f18899a644ec7c1589688a9600ba54cc65264f23f1f5877ba214ca76e75"
+    },
+    {
+      "name": "cni-plugins-source",
+      "version": "v1.9.1",
+      "source": "https://github.com/containernetworking/plugins/archive/refs/tags/v1.9.1.tar.gz",
+      "sha256": "34bd82d47e981940751619c9cc44c095bb90bfcaf8d71865cbb822c37690a764"
     }
   ]
 }

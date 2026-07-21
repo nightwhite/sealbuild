@@ -66,12 +66,16 @@ func (lock Lock) Validate() error {
 	if lock.GuestPlatform.OS != "linux" || lock.GuestPlatform.Architecture != "amd64" {
 		return fmt.Errorf("guestPlatform must be linux/amd64")
 	}
-	if len(lock.Components) == 0 {
+	return validateComponents(lock.Components)
+}
+
+func validateComponents(components []Component) error {
+	if len(components) == 0 {
 		return fmt.Errorf("components must not be empty")
 	}
 
-	componentNames := make(map[string]struct{}, len(lock.Components))
-	for _, component := range lock.Components {
+	componentNames := make(map[string]struct{}, len(components))
+	for _, component := range components {
 		if component.Name == "" {
 			return fmt.Errorf("component name is required")
 		}

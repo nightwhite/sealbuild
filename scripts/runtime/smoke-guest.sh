@@ -2,8 +2,8 @@
 
 set -eu
 
-if [ "$#" -ne 5 ]; then
-	printf 'usage: %s QEMU BUILDKCTL ARTIFACT_DIR OUTPUT_DIR HOST_PORT\n' "$0" >&2
+if [ "$#" -lt 6 ] || [ "$#" -gt 7 ]; then
+	printf 'usage: %s QEMU BUILDKCTL ARTIFACT_DIR TLS_DIR OUTPUT_DIR HOST_PORT [PROXY_URL]\n' "$0" >&2
 	exit 2
 fi
 
@@ -11,12 +11,25 @@ project_dir=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
 qemu=$1
 buildctl=$2
 artifact_dir=$3
-output_dir=$4
-host_port=$5
+tls_dir=$4
+output_dir=$5
+host_port=$6
+proxy_configured=false
+proxy_url=
+if [ "$#" -eq 7 ]; then
+	proxy_url=$7
+	if [ -z "${proxy_url}" ]; then
+		printf 'PROXY_URL must not be empty\n' >&2
+		exit 2
+	fi
+	proxy_configured=true
+fi
+
 serial_log="${output_dir}/serial.log"
-state_image="${output_dir}/buildkit-state.ext4"
+state_image="${output_dir}/buildkit-state.qcow2"
 worker_json="${output_dir}/worker.json"
 results_file="${output_dir}/measurements.txt"
+proxy_file=
 
 case "${host_port}" in
 	''|*[!0-9]*)
@@ -34,10 +47,12 @@ for required_file in \
 	"${buildctl}" \
 	"${artifact_dir}/bzImage" \
 	"${artifact_dir}/rootfs.ext4" \
-	"${artifact_dir}/buildkit-state.ext4" \
-	"${artifact_dir}/tls/ca.crt" \
-	"${artifact_dir}/tls/client.crt" \
-	"${artifact_dir}/tls/client.key"; do
+	"${artifact_dir}/buildkit-state.qcow2" \
+	"${tls_dir}/ca.crt" \
+	"${tls_dir}/server.crt" \
+	"${tls_dir}/server.key" \
+	"${tls_dir}/client.crt" \
+	"${tls_dir}/client.key"; do
 	if [ ! -f "${required_file}" ]; then
 		printf 'required smoke input is missing: %s\n' "${required_file}" >&2
 		exit 1
@@ -49,10 +64,27 @@ if [ -e "${output_dir}" ]; then
 	exit 1
 fi
 mkdir -p "${output_dir}"
-cp --sparse=always "${artifact_dir}/buildkit-state.ext4" "${state_image}"
+cp "${artifact_dir}/buildkit-state.qcow2" "${state_image}"
 
-boot_started=$(date +%s)
-"${qemu}" \
+if [ "${proxy_configured}" = true ]; then
+	proxy_file=$(mktemp "${output_dir}/.proxy.XXXXXX")
+	chmod 0600 "${proxy_file}"
+	printf '%s' "${proxy_url}" | go run "${project_dir}/scripts/runtime/inspect.go" proxy "${proxy_file}"
+fi
+
+qemu_pid=
+cleanup() {
+	if [ -n "${qemu_pid}" ]; then
+		kill "${qemu_pid}" 2>/dev/null || true
+		wait "${qemu_pid}" 2>/dev/null || true
+	fi
+	if [ -n "${proxy_file}" ]; then
+		rm -f "${proxy_file}"
+	fi
+}
+trap cleanup EXIT INT TERM
+
+set -- \
 	-accel tcg,thread=multi \
 	-machine q35 \
 	-cpu max \
@@ -64,17 +96,20 @@ boot_started=$(date +%s)
 	-kernel "${artifact_dir}/bzImage" \
 	-append 'root=/dev/vda ro console=ttyS0,115200 panic=1' \
 	-drive "file=${artifact_dir}/rootfs.ext4,format=raw,if=virtio,readonly=on" \
-	-drive "file=${state_image},format=raw,if=virtio" \
+	-drive "file=${state_image},format=qcow2,if=virtio" \
 	-netdev "user,id=net0,hostfwd=tcp:127.0.0.1:${host_port}-:1234" \
 	-device virtio-net-pci,netdev=net0 \
-	-serial "file:${serial_log}" &
-qemu_pid=$!
+	-fw_cfg "name=opt/sealbuild/tls/ca.crt,file=${tls_dir}/ca.crt" \
+	-fw_cfg "name=opt/sealbuild/tls/server.crt,file=${tls_dir}/server.crt" \
+	-fw_cfg "name=opt/sealbuild/tls/server.key,file=${tls_dir}/server.key" \
+	-serial "file:${serial_log}"
+if [ "${proxy_configured}" = true ]; then
+	set -- "$@" -fw_cfg "name=opt/sealbuild/proxy/url,file=${proxy_file}"
+fi
 
-cleanup() {
-	kill "${qemu_pid}" 2>/dev/null || true
-	wait "${qemu_pid}" 2>/dev/null || true
-}
-trap cleanup EXIT INT TERM
+boot_started=$(date +%s)
+"${qemu}" "$@" &
+qemu_pid=$!
 
 attempt=1
 while [ "${attempt}" -le 300 ]; do
@@ -101,18 +136,30 @@ if [ "${attempt}" -gt 300 ]; then
 fi
 boot_finished=$(date +%s)
 
+run_buildctl() {
+	if [ "${proxy_configured}" = true ]; then
+		HTTP_PROXY="${proxy_url}" \
+		HTTPS_PROXY="${proxy_url}" \
+		http_proxy="${proxy_url}" \
+		https_proxy="${proxy_url}" \
+		"${buildctl}" "$@"
+	else
+		"${buildctl}" "$@"
+	fi
+}
+
 set -- \
 	--addr "tcp://127.0.0.1:${host_port}" \
 	--tlsservername sealbuild-runtime \
-	--tlscacert "${artifact_dir}/tls/ca.crt" \
-	--tlscert "${artifact_dir}/tls/client.crt" \
-	--tlskey "${artifact_dir}/tls/client.key"
+	--tlscacert "${tls_dir}/ca.crt" \
+	--tlscert "${tls_dir}/client.crt" \
+	--tlskey "${tls_dir}/client.key"
 
-"${buildctl}" "$@" debug workers --format '{{json .}}' >"${worker_json}"
+run_buildctl "$@" debug workers --format '{{json .}}' >"${worker_json}"
 go run "${project_dir}/scripts/runtime/inspect.go" worker "${worker_json}"
 
 first_started=$(date +%s)
-"${buildctl}" "$@" build \
+run_buildctl "$@" build \
 	--frontend dockerfile.v0 \
 	--local "context=${project_dir}/runtime/smoke" \
 	--local "dockerfile=${project_dir}/runtime/smoke" \
@@ -122,7 +169,7 @@ first_started=$(date +%s)
 first_finished=$(date +%s)
 
 cached_started=$(date +%s)
-"${buildctl}" "$@" build \
+run_buildctl "$@" build \
 	--frontend dockerfile.v0 \
 	--local "context=${project_dir}/runtime/smoke" \
 	--local "dockerfile=${project_dir}/runtime/smoke" \

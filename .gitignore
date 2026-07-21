@@ -9,6 +9,7 @@
 coverage.out
 
 /runtime/generated/
+/internal/runtimeassets/generated/
 
 /reference/*
 !/reference/index.md

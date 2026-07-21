@@ -6,8 +6,8 @@ expected_buildroot_commit=cb857ba4c87a93e5265a9e4a3f32071abf39e14a
 linux_version=6.18.7
 linux_sha256=b726a4d15cf9ae06219b56d87820776e34d89fbc137e55fb54a9b9c3015b8f1e
 
-if [ "$#" -ne 2 ]; then
-	printf 'usage: %s BUILDROOT_DIR OUTPUT_DIR\n' "$0" >&2
+if [ "$#" -ne 3 ]; then
+	printf 'usage: %s BUILDROOT_DIR OUTPUT_DIR QEMU_IMG\n' "$0" >&2
 	exit 2
 fi
 
@@ -19,13 +19,18 @@ fi
 project_dir=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
 buildroot_dir=$(CDPATH= cd -- "$1" && pwd)
 output_dir=$2
+qemu_img=$3
 build_output="${output_dir}/buildroot"
 download_dir="${output_dir}/downloads"
-tls_dir="${output_dir}/tls"
 
 actual_buildroot_commit=$(git -C "${buildroot_dir}" rev-parse HEAD)
 if [ "${actual_buildroot_commit}" != "${expected_buildroot_commit}" ]; then
 	printf 'Buildroot commit is %s, expected %s\n' "${actual_buildroot_commit}" "${expected_buildroot_commit}" >&2
+	exit 1
+fi
+
+if ! "${qemu_img}" --version | grep -F 'version 11.0.2' >/dev/null; then
+	printf 'qemu-img must be QEMU 11.0.2\n' >&2
 	exit 1
 fi
 
@@ -37,8 +42,6 @@ if [ ! -f "${linux_archive}" ]; then
 	mv "${linux_archive}.tmp" "${linux_archive}"
 fi
 printf '%s  %s\n' "${linux_sha256}" "${linux_archive}" | sha256sum --check --status
-
-"${project_dir}/scripts/runtime/generate-spike-certs.sh" "${tls_dir}"
 
 make -C "${buildroot_dir}" \
 	O="${build_output}" \
@@ -52,13 +55,43 @@ if grep -q '^BR2_PACKAGE_RUNC=y$' "${build_output}/.config" || \
 	exit 1
 fi
 
-SEALBUILD_TLS_DIR="${tls_dir}" make -C "${buildroot_dir}" \
+make -C "${buildroot_dir}" \
 	O="${build_output}" \
 	BR2_EXTERNAL="${project_dir}/runtime/buildroot" \
 	BR2_DL_DIR="${download_dir}"
 
-state_image="${output_dir}/buildkit-state.ext4"
-truncate --size 4G "${state_image}"
-mkfs.ext4 -F -L sealbuild-state "${state_image}"
+make -C "${buildroot_dir}" \
+	O="${build_output}" \
+	BR2_EXTERNAL="${project_dir}/runtime/buildroot" \
+	BR2_DL_DIR="${download_dir}" \
+	legal-info
+
+"${project_dir}/scripts/runtime/collect-guest-licenses.sh" \
+	"${project_dir}/runtime/manifest.lock.json" \
+	"${build_output}/legal-info/licenses" \
+	"${output_dir}/guest-license-sources" \
+	"${output_dir}/guest-licenses"
+
+raw_state_image="${output_dir}/buildkit-state.raw"
+state_image="${output_dir}/buildkit-state.qcow2"
+if [ -e "${raw_state_image}" ] || [ -e "${state_image}" ] || [ -e "${state_image}.tmp" ]; then
+	printf 'Guest state image output already exists under %s\n' "${output_dir}" >&2
+	exit 1
+fi
+
+truncate --size 32G "${raw_state_image}"
+mkfs.ext4 -F -L sealbuild-state "${raw_state_image}"
+"${qemu_img}" convert \
+	-f raw \
+	-O qcow2 \
+	-o compat=1.1,lazy_refcounts=on \
+	"${raw_state_image}" \
+	"${state_image}.tmp"
+mv "${state_image}.tmp" "${state_image}"
+rm -f "${raw_state_image}"
+
+state_info=$("${qemu_img}" info --output=json "${state_image}")
+printf '%s\n' "${state_info}" | jq -e \
+	'.format == "qcow2" and .["virtual-size"] == 34359738368' >/dev/null
 
 "${project_dir}/scripts/runtime/package-guest.sh" "${output_dir}"

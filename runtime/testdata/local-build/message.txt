@@ -1,0 +1,1 @@
+sealbuild local linux/amd64 build
