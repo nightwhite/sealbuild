@@ -40,8 +40,8 @@ func TestStartRunsOneIndependentVMAndCloseReleasesResources(t *testing.T) {
 	if launcher.starts != 1 || ports.reservations != 1 || ports.releases != 1 {
 		t.Fatalf("starts = %d reservations = %d releases = %d, want 1 each", launcher.starts, ports.reservations, ports.releases)
 	}
-	if launcher.path != config.QEMUPath {
-		t.Fatalf("launcher path = %q, want %q", launcher.path, config.QEMUPath)
+	if launcher.path != expectedTestLaunchPath(config) {
+		t.Fatalf("launcher path = %q, want %q", launcher.path, expectedTestLaunchPath(config))
 	}
 	joinedArgs := strings.Join(launcher.args, " ")
 	if !strings.Contains(joinedArgs, "hostfwd=tcp:127.0.0.1:49153-:1234") {

@@ -84,10 +84,14 @@ func Start(ctx context.Context, config Config, stateLockPath string, options Opt
 	if err != nil {
 		return nil, errors.Join(fmt.Errorf("construct QEMU arguments: %w", err), releaseShutdown(), releasePort(), cleanup())
 	}
+	launchPath, launchArgs, err := qemuCommand(config, args)
+	if err != nil {
+		return nil, errors.Join(fmt.Errorf("construct QEMU launch command: %w", err), releaseShutdown(), releasePort(), cleanup())
+	}
 	if err := errors.Join(releaseShutdown(), releasePort()); err != nil {
 		return nil, errors.Join(fmt.Errorf("release VM loopback reservation: %w", err), cleanup())
 	}
-	process, err := options.Launcher.Start(config.QEMUPath, args)
+	process, err := options.Launcher.Start(launchPath, launchArgs)
 	if err != nil {
 		return nil, errors.Join(fmt.Errorf("launch QEMU: %w", err), cleanup())
 	}

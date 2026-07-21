@@ -134,7 +134,7 @@ func validConfig(t *testing.T) Config {
 		t.Fatalf("Generate(TLS) error = %v", err)
 	}
 	return Config{
-		QEMUPath:     writeConfigFile(t, filepath.Join(directory, "qemu-system-x86_64"), "qemu", 0o755),
+		QEMUPath:     writeTestQEMU(t, directory),
 		FirmwarePath: writeConfigDirectory(t, filepath.Join(directory, "share", "qemu")),
 		KernelPath:   writeConfigFile(t, filepath.Join(directory, "bzImage"), "kernel", 0o644),
 		RootFSPath:   writeConfigFile(t, filepath.Join(directory, "rootfs.ext4"), "rootfs", 0o644),
