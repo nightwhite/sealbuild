@@ -99,6 +99,10 @@ bootstrap_python="${bootstrap_dir}/bin/python3"
 		--disable-curses \
 		--disable-dbus-display \
 		--disable-png \
+		--disable-lzo \
+		--disable-snappy \
+		--disable-bzip2 \
+		--disable-lzfse \
 		--disable-docs \
 		--disable-guest-agent \
 		--disable-tools \
