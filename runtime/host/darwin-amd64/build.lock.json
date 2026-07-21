@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "hostPlatform": {
     "os": "darwin",
-    "architecture": "arm64"
+    "architecture": "amd64"
   },
   "components": [
     {

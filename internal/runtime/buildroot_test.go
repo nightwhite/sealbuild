@@ -345,23 +345,25 @@ func TestSmokeGuestUsesFWCfgAndQCOW2(t *testing.T) {
 	}
 }
 
-func TestDarwinARMQEMUBuildScriptUsesPinnedTCGOnlyConfiguration(t *testing.T) {
-	buildScript, err := os.ReadFile("../../scripts/runtime/build-qemu-darwin-arm64.sh")
+func TestDarwinQEMUBuildScriptUsesExplicitArchitecture(t *testing.T) {
+	buildScript, err := os.ReadFile("../../scripts/runtime/build-qemu-darwin.sh")
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
 
 	contents := string(buildScript)
 	for _, requiredFragment := range []string{
+		"HOST_ARCHITECTURE HOMEBREW_ROOT PYTHON SETUPTOOLS_WHEEL QEMU_SOURCE OUTPUT_DIR",
 		"e545d8bb9d63e9dd61542b88463183314cff9482",
 		"Python 3.14.6",
-		"setuptools-79.0.1-py3-none-any.whl",
 		"e147c0549f27767ba362f9da434eab9c5dc0045d5304feb602a0af001089fc51",
 		`-m venv --system-site-packages "${bootstrap_dir}"`,
 		`-m pip install --disable-pip-version-check --no-index --no-deps "${setuptools_wheel}"`,
 		`--python="${bootstrap_python}"`,
 		`[ "$(uname -s)" = Darwin ]`,
-		`[ "$(uname -m)" = arm64 ]`,
+		`[ "$(uname -m)" = "${expected_uname_architecture}" ]`,
+		`"${homebrew_root}/bin/brew" --prefix`,
+		`lipo -archs "${qemu}"`,
 		"--target-list=x86_64-softmmu",
 		"--enable-tcg",
 		"--enable-slirp",
@@ -376,7 +378,7 @@ func TestDarwinARMQEMUBuildScriptUsesPinnedTCGOnlyConfiguration(t *testing.T) {
 		"--disable-bsd-user",
 		"--disable-linux-user",
 		"--disable-download",
-		"ninja -C \"${build_dir}\" qemu-system-x86_64",
+		"ninja -C \"${output_dir}\" qemu-system-x86_64",
 		"Accelerators supported in QEMU binary:",
 	} {
 		if !strings.Contains(contents, requiredFragment) {

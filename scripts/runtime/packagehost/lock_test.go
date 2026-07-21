@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -195,6 +196,32 @@ func TestRepositoryBuildLockPinsGLibLicenseFileInsteadOfSymlink(t *testing.T) {
 	want := []string{"LICENSES/LGPL-2.1-or-later.txt"}
 	if !slices.Equal(glib.LicenseFiles, want) {
 		t.Fatalf("glib licenseFiles = %#v, want %#v", glib.LicenseFiles, want)
+	}
+}
+
+func TestRepositoryDarwinBuildLocksPinSameComponents(t *testing.T) {
+	locks := make(map[string]BuildLock)
+	for _, architecture := range []string{"arm64", "amd64"} {
+		path := "../../../runtime/host/darwin-" + architecture + "/build.lock.json"
+		file, err := os.Open(path)
+		if err != nil {
+			t.Fatalf("Open(%s) error = %v", path, err)
+		}
+		lock, loadErr := LoadBuildLock(file)
+		closeErr := file.Close()
+		if loadErr != nil {
+			t.Fatalf("LoadBuildLock(%s) error = %v", path, loadErr)
+		}
+		if closeErr != nil {
+			t.Fatalf("Close(%s) error = %v", path, closeErr)
+		}
+		if lock.HostPlatform != (runtimepkg.Platform{OS: "darwin", Architecture: architecture}) {
+			t.Fatalf("%s platform = %#v", path, lock.HostPlatform)
+		}
+		locks[architecture] = lock
+	}
+	if !reflect.DeepEqual(locks["arm64"].Components, locks["amd64"].Components) {
+		t.Fatal("Darwin ARM64 and AMD64 Build Locks use different component inputs")
 	}
 }
 
