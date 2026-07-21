@@ -6,11 +6,16 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
 // PrepareShutdownPath reserves a unique Unix socket pathname for one VM.
 func PrepareShutdownPath() (string, error) {
-	file, err := os.CreateTemp("", ".sealbuild-shutdown-*.sock")
+	tempDir, err := filepath.EvalSymlinks(os.TempDir())
+	if err != nil {
+		return "", fmt.Errorf("resolve VM shutdown temp directory: %w", err)
+	}
+	file, err := os.CreateTemp(tempDir, ".sealbuild-shutdown-*.sock")
 	if err != nil {
 		return "", fmt.Errorf("reserve VM shutdown socket path: %w", err)
 	}
