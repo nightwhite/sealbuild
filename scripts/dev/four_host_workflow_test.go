@@ -119,6 +119,28 @@ func TestFourHostProductJobsDoNotInstallProductDependencies(t *testing.T) {
 	}
 }
 
+func TestFourHostWorkflowBuildsWithVendoredGoModules(t *testing.T) {
+	contents, err := os.ReadFile("../../.github/workflows/four-host-candidate.yml")
+	if err != nil {
+		t.Fatalf("ReadFile(four-host-candidate.yml) error = %v", err)
+	}
+	workflow := string(contents)
+	if !strings.Contains(workflow, `GOFLAGS: "-mod=vendor"`) {
+		t.Error("four-host-candidate.yml must force vendored Go modules")
+	}
+	if count := strings.Count(workflow, `- "vendor/**"`); count != 2 {
+		t.Errorf("vendor path trigger count = %d, want 2", count)
+	}
+
+	modules, err := os.ReadFile("../../vendor/modules.txt")
+	if err != nil {
+		t.Fatalf("ReadFile(vendor/modules.txt) error = %v", err)
+	}
+	if !strings.Contains(string(modules), "# github.com/klauspost/compress v1.18.6") {
+		t.Error("vendor/modules.txt does not contain the locked compression module")
+	}
+}
+
 func workflowJob(t *testing.T, workflow, jobName string) string {
 	t.Helper()
 	startMarker := "\n  " + jobName + ":"
