@@ -26,6 +26,8 @@
 - `internal/vm/config.go`：验证平台启动命令所需的 Host Runtime 文件。
 - `internal/build/runner.go`：继续只传递安装后的 Host QEMU 路径，由 VM 包隔离 Linux 启动差异。
 - `runtime/host/windows-amd64/build.lock.json`：加入最终 DLL 来源包的精确版本锁。
+- `runtime/host/darwin-arm64/build.lock.json`：逐文件锁定 Host 许可证 SHA-256。
+- `runtime/host/darwin-amd64/build.lock.json`：逐文件锁定 Host 许可证 SHA-256。
 - `scripts/dev/prepare-runtime-assets_test.go`：覆盖四平台资产准备约束。
 - `docs/runtime-spike-results.md`：记录四平台 Actions 和 RC 证据。
 - `README.md`：只声明已由 Actions 证明的 RC 候选能力和最终实机验收状态。
@@ -41,6 +43,7 @@
 - `internal/vm/command_linux_test.go`：Linux 启动命令和宿主环境隔离测试。
 - `scripts/runtime/build-qemu-darwin.sh`：显式目标架构的 Darwin TCG-only QEMU 构建。
 - `runtime/host/darwin-amd64/build.lock.json`：Intel Mac Host Runtime 输入锁。
+- `runtime/host/darwin-licenses/**`：Darwin 依赖的精确许可证文本。
 - `scripts/runtime/packagelinuxhost/lock.go`：Linux Host Build Lock schema。
 - `scripts/runtime/packagelinuxhost/elf.go`：ELF Interpreter 与 `DT_NEEDED` 递归闭包。
 - `scripts/runtime/packagelinuxhost/main.go`：Linux payload、固件、许可证、Manifest 和 tar.zst。
@@ -622,11 +625,11 @@ git diff --check
 actionlint
 ```
 
-Guest Job 只使用固定官方 URL、SHA-256 和 Buildroot Commit，不添加重试或备用源。
+`prepare-runtime-sources` 只从固定官方 URL 下载一次 QEMU 并校验 SHA-256；Guest 和四个 Host Job 下载当前 Run Artifact 后分别再次校验。Guest Job 使用固定 Buildroot Commit，不添加重试、备用源或跨 Run 复用。
 
 - [ ] **步骤 4：实现四个 Host Runtime Jobs**
 
-每个 Job 在原生固定 Runner 构建、验证并上传自己的 tar.zst。Darwin Jobs 显式传入架构/Homebrew 根；Linux Job运行 ELF packager；Windows Job 迁移当前已通过 PE/DLL 流程并补运行时包锁。
+每个 Job 在原生固定 Runner 构建、验证并上传自己的 tar.zst。Darwin Jobs 显式传入架构/Homebrew 根，依赖许可证使用纳入 Git 且由 Build Lock 逐文件校验 SHA-256 的固定文本，QEMU 许可证来自当前 Run 已校验源码；Linux Job运行 ELF packager；Windows Job 迁移当前已通过 PE/DLL 流程并补运行时包锁。
 
 - [ ] **步骤 5：实现四个产品双构建 Jobs**
 

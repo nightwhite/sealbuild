@@ -8,7 +8,9 @@ Darwin ARM 本地 OCI 构建链路已经完成真实验收。当前单文件 CLI
 
 2026-07-20 在 Apple Silicon Mac 上连续完成两组固定 `linux/amd64` 构建。轻量验收 Context 首次 37.52 秒、缓存构建 12.66 秒；真实 `aws-account` Node + Rust + Debian 多阶段 Dockerfile 首次 28 分 16 秒、缓存构建 11.84 秒，18 个步骤命中 `CACHED`。
 
-Windows AMD64 候选已在 GitHub-hosted Windows Server 2025 x64 Runner 完成真实验收。单文件 EXE 自带 TCG-only QEMU Host Runtime 和 Linux AMD64 Guest Runtime；独立产品 Job 在不安装 MSYS2、Docker、WSL 或 QEMU 且第三方 PATH 被清空的环境中连续完成两次标准 Dockerfile 构建，第二次命中缓存，两个 OCI 输出均为 `linux/amd64`。候选 EXE 为 82,245,120 字节，SHA-256 为 `22ea2e33f9784746d53b55d4fb0e278c25f6d6bff0ee836b922f0c01dc92324a`。Windows 10/11 Home 普通用户实机尚未验收，因此当前只能把它标记为 Windows CI 候选，不能宣称家庭版正式支持。Registry Push、Darwin Intel 和 Linux AMD64 仍未完成真实端到端验收。完整证据见 [`docs/runtime-spike-results.md`](docs/runtime-spike-results.md)。
+2026-07-22，统一四宿主 GitHub Actions 候选在同一 Commit 上完成真实验收：Linux AMD64、Windows AMD64、Apple Silicon Mac 和 Intel Mac 的单文件候选分别在原生 Runner 中连续执行两次标准 Dockerfile 构建；每次构建使用全新的 QEMU TCG VM，第二次顺序复用持久 qcow2 缓存盘并命中 `CACHED`，两个 OCI 输出均严格为 `linux/amd64`，结束后无 QEMU 进程残留。成功运行：[Four host candidate #29850164965](https://github.com/nightwhite/sealbuild/actions/runs/29850164965)，Commit `3fdfea54c6974eb3bbd47b03473c7cadaccd4219`。
+
+这些结果证明四个平台的 GitHub-hosted Runner 候选链路已经跑通，但不能替代最终实机验收。Windows 10/11 Home 普通用户、常见 Linux AMD64 发行版、Apple Silicon Mac 和 Intel Mac 仍需直接运行同一批 RC 字节，因此当前不宣称四个平台正式支持。Registry Push 也不在当前候选交付范围内。完整证据见 [`docs/runtime-spike-results.md`](docs/runtime-spike-results.md)。
 
 ## 支持范围
 
@@ -66,9 +68,7 @@ go test ./...
 CGO_ENABLED=0 go build -tags sealbuild_runtime ./cmd/sealbuild
 ```
 
-Windows 候选验收由 [`.github/workflows/windows-amd64.yml`](.github/workflows/windows-amd64.yml) 执行：Linux Job 构建公共 Guest Runtime，Windows Runtime Job 在 MSYS2 CLANG64 中从固定 QEMU Revision 构建 TCG-only Host Runtime，独立 Windows 产品 Job 生成单文件 EXE 并连续构建两次 Dockerfile。该工作流只上传候选 Artifact，不创建不完整的单平台 GitHub Release。
-
-已通过的 Windows 候选运行：[Windows AMD64 candidate #29813868783](https://github.com/nightwhite/sealbuild/actions/runs/29813868783)，Commit `1f1558c4548a935cc036a5f77de9758aacb42a25`。
+四宿主候选验收由 [`.github/workflows/four-host-candidate.yml`](.github/workflows/four-host-candidate.yml) 统一执行。工作流只下载一次固定 QEMU 源码并校验 SHA-256，构建一份公共 Linux AMD64 Guest Runtime，再在四个原生 Runner 中构建 Host Runtime。四个隔离产品 Job 生成单文件候选并执行双构建、缓存、OCI 平台、VM 独立性、进程清理和 150 MiB 门禁；只有四个平台全部成功，聚合 Job 才生成统一候选。
 
 ## 项目结构
 

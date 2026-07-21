@@ -323,18 +323,19 @@ func TestSmokeGuestUsesFWCfgAndQCOW2(t *testing.T) {
 		t.Fatal("smoke script must not place the proxy URL in QEMU arguments")
 	}
 
-	workflow, err := os.ReadFile("../../.github/workflows/runtime-spike.yml")
+	workflow, err := os.ReadFile("../../.github/workflows/four-host-candidate.yml")
 	if err != nil {
-		t.Fatalf("ReadFile(runtime-spike.yml) error = %v", err)
+		t.Fatalf("ReadFile(four-host-candidate.yml) error = %v", err)
 	}
 	workflowContents := string(workflow)
 	for _, requiredFragment := range []string{
-		"ninja -C build qemu-system-x86_64 qemu-img",
+		"build-guest-runtime:",
+		"name: sealbuild-qemu-source",
+		"ninja -C build qemu-img",
 		`"$RUNNER_TEMP/qemu-11.0.2/build/qemu-img"`,
-		"generate-spike-certs.sh",
-		`"$RUNNER_TEMP/runtime-spike/tls"`,
-		"artifact/manifest.json",
-		"artifact/checksums.txt",
+		"./scripts/runtime/build-guest.sh",
+		"go run ./scripts/dev/verify-runtime",
+		"name: sealbuild-guest-runtime-linux-amd64",
 	} {
 		if !strings.Contains(workflowContents, requiredFragment) {
 			t.Errorf("workflow is missing %q", requiredFragment)

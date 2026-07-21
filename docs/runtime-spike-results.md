@@ -4,7 +4,29 @@
 
 里程碑 1 已完成 Runtime 定义、严格版本锁、Buildroot External Tree、Guest 启动配置、mTLS、QEMU TCG Smoke Test 和 Linux GitHub Actions。2026-07-20 又完成新版 fw_cfg/qcow2 Guest、Darwin ARM 单文件 CLI、BuildKit Go Client、本地 OCI 导出、跨独立 VM 缓存复用和正常关机协议的真实验收。
 
-当前可以宣称 Darwin ARM 本地构建 `linux/amd64` OCI Archive 可用。Windows AMD64 候选也已在 GitHub-hosted Windows Server 2025 x64 Runner 完成真实端到端验收，但 Windows 10/11 Home 普通用户实机尚未执行，因此当前只宣称 Windows CI 候选可构建和可测试，不宣称 Windows Home 正式支持。Darwin Intel 和 Linux AMD64 在各自真实端到端验收前仍不宣称支持。
+当前可以宣称 Darwin ARM 本地构建 `linux/amd64` OCI Archive 可用。统一四宿主候选也已在 GitHub-hosted Linux AMD64、Windows Server 2025 x64、Apple Silicon Mac 和 Intel Mac Runner 完成真实端到端验收。GitHub-hosted Runner 不能替代用户最终实机验收，因此当前只宣称四宿主 CI 候选可构建和可测试，不宣称 Windows Home、Linux 或两种 Mac 正式支持。
+
+## Four-host Actions candidate verified on 2026-07-22
+
+成功运行：[Four host candidate #29850164965](https://github.com/nightwhite/sealbuild/actions/runs/29850164965)，PR Head Commit `3fdfea54c6974eb3bbd47b03473c7cadaccd4219`。`pull_request` 事件实际 Checkout 并注入四个候选的是 GitHub 合并测试 Commit `cf0a7c7351c761df52a02dba52b4e28ae1b9ffab`；四个平台候选和统一元数据均明确记录同一个 Commit。
+
+- `quality`、唯一 QEMU 源准备、公共 Guest、四个 Host Runtime、四个产品双构建和统一聚合全部成功；只有非 Tag 事件专用的 `publish-rc` 按设计跳过。
+- QEMU v11.0.2 源码只从固定官方 URL 下载一次并校验 SHA-256，随后由当前 Workflow Run 的 Artifact 分发给 Guest 和四个 Host Job；没有备用 URL、自动重试或跨 Run 产物复用。
+- Darwin 依赖许可证文本来自与 Build Lock 完全匹配的已校验源码归档，固定在 `runtime/host/darwin-licenses`；Build Lock 对 13 个实际打包许可证文件逐个锁定 SHA-256，打包器校验最终复制内容。
+- Linux、Windows、Darwin ARM64 和 Darwin AMD64 Host Runtime 均在对应原生 Runner 构建并执行；QEMU v11.0.2 的 accelerator 严格只有 `tcg`。
+- 四个产品 Job 都不安装 Docker、WSL、MSYS2、系统 QEMU 或其他产品依赖；候选只使用自身内嵌 Host Runtime 和同一份 Linux AMD64 Guest Runtime。
+- 每个平台连续运行两次标准 Dockerfile 构建，包含固定摘要基础镜像、联网 `RUN wget`、`COPY` 和多阶段 `FROM scratch`；第二次使用新的 QEMU VM 和同一持久缓存盘。
+- Linux、Darwin ARM64、Darwin AMD64 的缓存日志各有 9 条 `CACHED`，Windows 有 5 条 `CACHED`。
+- 每个平台的两个 OCI Archive 都由项目检查器输出 `OCI platform: linux/amd64`；每个平台都验证恰好生成 2 个 VM serial log，并在每次构建后确认无 QEMU 进程残留。
+- 产品 Job 耗时：Linux AMD64 1 分 56 秒、Darwin ARM64 2 分 16 秒、Windows AMD64 3 分 8 秒、Darwin AMD64 4 分 37 秒。
+- 公共 Guest Runtime 冷构建 41 分 6 秒；Host Runtime 构建耗时为 Linux 3 分 43 秒、Darwin ARM64 4 分 26 秒、Darwin AMD64 6 分 59 秒、Windows 13 分 33 秒。
+- 统一聚合 Job 重新校验四个平台独立 SHA-256，并拒绝缺失、额外、空文件或达到 150 MiB 的候选。
+- `sealbuild-darwin-arm64`：56,352,466 字节，SHA-256 `330f522a9883e5270bb7203800fbbc5273f8ff3e9a6bc79385fdf1c8f170fb46`，Mach-O arm64。
+- `sealbuild-darwin-amd64`：57,755,136 字节，SHA-256 `43c8cb3b0eabdbe6fe74ca63471c4488408ebd7268eae66be586d87e7d806c23`，Mach-O x86_64。
+- `sealbuild-linux-amd64`：60,297,378 字节，SHA-256 `893b7f94d3bf165ecdec0f9fcf5d67e50a766ddb47f9daf822683208bf2a1de1`，静态 ELF x86-64。
+- `sealbuild-windows-amd64.exe`：73,206,784 字节，SHA-256 `73df708d294c803bd39d2c8057c3f34ab8ac446966915db5acbab5b6fa8f3985`，PE32+ x86-64。
+- 下载后的 `checksums.txt` 对四个候选全部返回 `OK`；独立重新计算的大小和 SHA-256 与 `candidate.json` 完全一致，四个文件均低于 150 MiB。
+- 尚缺证据：同一 RC 产物在 Windows 10/11 Home 普通用户、常见 Linux AMD64 发行版、Apple Silicon Mac 和 Intel Mac 实机各完成至少一次构建。
 
 ## Windows AMD64 Actions candidate verified on 2026-07-21
 
@@ -132,4 +154,4 @@
 - Smoke 与 Linux workflow 已迁移到 qcow2 和 fw_cfg；`actionlint v1.7.7` 通过。
 - 该阶段遗留的新版 Guest 真实验收已于 2026-07-20 完成，结果见上方 Darwin ARM local OCI build 章节。
 
-Darwin ARM 已完成自包含单文件本地构建验证；Windows AMD64 已完成 Windows Server 2025 CI 候选验收，但仍等待 Windows Home 实机门禁；Darwin Intel 和 Linux AMD64 在各自真实端到端验收前仍不得宣称支持。Registry Push 仍不在当前交付范围内。
+Darwin ARM 已完成自包含单文件本地构建验证；四宿主已完成统一 GitHub Actions CI 候选验收，但仍等待 Windows Home、Linux AMD64、Apple Silicon Mac 和 Intel Mac 实机门禁。Registry Push 仍不在当前交付范围内。
