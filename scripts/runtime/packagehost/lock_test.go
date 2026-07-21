@@ -169,6 +169,7 @@ func TestRepositoryBuildLockPinsVerifiedSources(t *testing.T) {
 		{"libslirp", "4.9.3", "ee698ca4ce05217ca7d520c7f0b1b1228fd7d32922dd32d1051c347152588417"},
 		{"zstd", "1.5.7", "37d7284556b20954e56e1ca85b80226768902e2edabd3b649e9e72c0c9012ee3"},
 		{"gettext", "1.0", "85d99b79c981a404874c02e0342176cf75c7698e2b51fe41031cf6526d974f1a"},
+		{"gmp", "6.3.0", "a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898"},
 		{"pcre2", "10.47", "47fe8c99461250d42f89e6e8fdaeba9da057855d06eb7fc08d9ca03fd08d7bc7"},
 	}
 	if len(lock.Components) != len(expected) {
@@ -237,7 +238,7 @@ func validBuildLock() BuildLock {
 			LicenseFiles: []string{"COPYING", "COPYING.LIB", "LICENSE"},
 		},
 	}
-	for _, name := range []string{"glib", "pixman", "libslirp", "zstd", "gettext", "pcre2"} {
+	for _, name := range []string{"glib", "pixman", "libslirp", "zstd", "gettext", "gmp", "pcre2"} {
 		components = append(components, LockedComponent{
 			Name:         name,
 			Version:      "1.0.0",

@@ -167,6 +167,7 @@ func lockedDependencyGraph(root string) DependencyGraph {
 		{SourcePath: filepath.Join(cellar, "libslirp", "4.9.3", "lib", "libslirp.0.dylib")},
 		{SourcePath: filepath.Join(cellar, "zstd", "1.5.7_1", "lib", "libzstd.1.dylib")},
 		{SourcePath: filepath.Join(cellar, "gettext", "1.0", "lib", "libintl.8.dylib")},
+		{SourcePath: filepath.Join(cellar, "gmp", "6.3.0", "lib", "libgmp.10.dylib")},
 		{SourcePath: filepath.Join(cellar, "pcre2", "10.47_1", "lib", "libpcre2-8.0.dylib")},
 	}}
 }
@@ -179,6 +180,7 @@ func dependencyBuildLock() BuildLock {
 		"libslirp": "4.9.3",
 		"zstd":     "1.5.7",
 		"gettext":  "1.0",
+		"gmp":      "6.3.0",
 		"pcre2":    "10.47",
 	}
 	for index := range lock.Components {

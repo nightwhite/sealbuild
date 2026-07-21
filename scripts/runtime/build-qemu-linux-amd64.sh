@@ -37,6 +37,8 @@ mkdir "${output_dir}"
 		--enable-slirp \
 		--disable-kvm \
 		--disable-xen \
+		--disable-mshv \
+		--disable-nitro \
 		--disable-gtk \
 		--disable-sdl \
 		--disable-docs \

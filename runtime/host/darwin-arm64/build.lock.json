@@ -55,6 +55,14 @@
       "licenseFiles": ["COPYING", "gettext-runtime/intl/COPYING.LIB"]
     },
     {
+      "name": "gmp",
+      "version": "6.3.0",
+      "source": "https://ftp.gnu.org/gnu/gmp/gmp-6.3.0.tar.xz",
+      "sha256": "a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898",
+      "license": "GPL-2.0-or-later OR LGPL-3.0-or-later",
+      "licenseFiles": ["COPYING", "COPYING.LESSERv3"]
+    },
+    {
       "name": "pcre2",
       "version": "10.47",
       "source": "https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.47/pcre2-10.47.tar.bz2",

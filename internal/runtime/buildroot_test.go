@@ -27,7 +27,7 @@ func TestBuildrootDownloadsDoNotRetryOrUseBackupSite(t *testing.T) {
 
 	for _, requiredSetting := range []string{
 		`BR2_CURL="curl -q --ftp-pasv --retry 0 --connect-timeout 10"`,
-		`BR2_WGET="wget -nd -t 1 --connect-timeout=10"`,
+		`BR2_WGET="wget -nd -t 1 --connect-timeout=10 --user-agent=sealbuild-buildroot/1"`,
 		`BR2_BACKUP_SITE=""`,
 		`BR2_GNU_MIRROR="https://ftp.gnu.org/gnu"`,
 	} {
@@ -410,6 +410,8 @@ func TestLinuxQEMUBuildScriptUsesPinnedTCGOnlyConfiguration(t *testing.T) {
 		"--enable-slirp",
 		"--disable-kvm",
 		"--disable-xen",
+		"--disable-mshv",
+		"--disable-nitro",
 		"--disable-gtk",
 		"--disable-sdl",
 		"--disable-docs",
