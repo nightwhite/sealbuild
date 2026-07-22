@@ -83,8 +83,7 @@ runtime/buildroot/   Guest Runtime 的 Buildroot External Tree
 runtime/testdata/    本地真实构建与关机验收 Fixture
 scripts/runtime/     Host/Guest Runtime 构建与打包脚本
 scripts/dev/         开发期 Runtime、OCI 验证与资产嵌入工具
-reference/           固定版本的上游参考仓库
 docs/superpowers/    已批准的设计规格和实现计划
 ```
 
-参考项目的版本和用途见 [`reference/index.md`](reference/index.md)。工程约束见 [`AGENTS.md`](AGENTS.md)。
+工程约束见 [`AGENTS.md`](AGENTS.md)。
